@@ -51,7 +51,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage }) => {
       // Explicitly focus after a short delay to ensure DOM update
       setTimeout(() => {
         inputRef.current?.focus();
-      }, 0);
+      }, 50);
     }
   };
 
