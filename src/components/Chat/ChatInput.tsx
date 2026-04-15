@@ -6,10 +6,12 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Send, Mic, Camera, X, Square } from 'lucide-react';
+import { Send, Mic, Camera, X, Square, Image as ImageIcon } from 'lucide-react';
 import { useVoiceRecorder } from '../../hooks/useVoiceRecorder';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../../lib/utils';
+import { Camera as CapCamera, CameraResultType, CameraSource } from '@capacitor/camera';
+import { Toast } from '@capacitor/toast';
 
 interface ChatInputProps {
   onSendMessage: (text: string, type: 'text' | 'voice' | 'image', mediaUrl?: string) => void;
@@ -21,8 +23,6 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage }) => {
   const [previewImage, setPreviewImage] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const cameraInputRef = useRef<HTMLInputElement>(null);
-  const longPressTimer = useRef<NodeJS.Timeout | null>(null);
   const { isRecording, audioUrl, startRecording, stopRecording, setAudioUrl } = useVoiceRecorder();
 
   // Auto-focus when isRecording becomes false
@@ -52,6 +52,41 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage }) => {
       setTimeout(() => {
         inputRef.current?.focus();
       }, 50);
+    }
+  };
+
+  const takePhoto = async () => {
+    try {
+      const image = await CapCamera.getPhoto({
+        quality: 90,
+        allowEditing: false,
+        resultType: CameraResultType.DataUrl,
+        source: CameraSource.Camera
+      });
+      
+      if (image.dataUrl) {
+        setPreviewImage(image.dataUrl);
+      }
+    } catch (error) {
+      console.error('Camera error:', error);
+      // User might have cancelled
+    }
+  };
+
+  const pickImage = async () => {
+    try {
+      const image = await CapCamera.getPhoto({
+        quality: 90,
+        allowEditing: false,
+        resultType: CameraResultType.DataUrl,
+        source: CameraSource.Photos
+      });
+      
+      if (image.dataUrl) {
+        setPreviewImage(image.dataUrl);
+      }
+    } catch (error) {
+      console.error('Gallery error:', error);
     }
   };
 
@@ -93,7 +128,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage }) => {
                   onClick={() => {
                     setPreviewImage(null);
                     // Small delay to allow state update before opening camera
-                    setTimeout(() => cameraInputRef.current?.click(), 100);
+                    setTimeout(() => takePhoto(), 100);
                   }}
                 >
                   重拍
@@ -136,35 +171,37 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage }) => {
         </AnimatePresence>
 
         <div className="flex items-center gap-3 bg-white dark:bg-[rgba(255,255,255,0.03)] border border-border rounded-[24px] p-2 h-20 shadow-sm dark:shadow-none">
-          <Button 
-            type="button"
-            variant="ghost" 
-            size="icon" 
-            className="shrink-0 w-11 h-11 rounded-full bg-card border select-none active:scale-95 transition-transform"
-            onClick={() => cameraInputRef.current?.click()}
-            onContextMenu={(e) => {
-              e.preventDefault();
-              fileInputRef.current?.click();
-            }}
-            disabled={isRecording}
-          >
-            <Camera size={20} />
-          </Button>
+          <div className="flex gap-1">
+            <Button 
+              type="button"
+              variant="ghost" 
+              size="icon" 
+              className="shrink-0 w-11 h-11 rounded-full bg-card border select-none active:scale-95 transition-transform"
+              onClick={takePhoto}
+              disabled={isRecording}
+              title="拍照"
+            >
+              <Camera size={20} />
+            </Button>
+            <Button 
+              type="button"
+              variant="ghost" 
+              size="icon" 
+              className="shrink-0 w-11 h-11 rounded-full bg-card border select-none active:scale-95 transition-transform"
+              onClick={pickImage}
+              disabled={isRecording}
+              title="相册"
+            >
+              <ImageIcon size={20} />
+            </Button>
+          </div>
           
-          {/* Hidden inputs */}
+          {/* Hidden inputs for fallback if needed, but we use Capacitor now */}
           <input 
             type="file" 
             ref={fileInputRef} 
             onChange={handleImageUpload} 
             accept="image/*" 
-            className="hidden" 
-          />
-          <input 
-            type="file" 
-            ref={cameraInputRef} 
-            onChange={handleImageUpload} 
-            accept="image/*" 
-            capture="environment"
             className="hidden" 
           />
 

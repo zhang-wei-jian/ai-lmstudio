@@ -15,8 +15,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { AppSettings } from '../../types';
-
-import { ImagePlus, X } from 'lucide-react';
+import { ImagePlus, X, Camera, Image as ImageIcon } from 'lucide-react';
+import { Camera as CapCamera, CameraResultType, CameraSource } from '@capacitor/camera';
 
 interface SettingsDialogProps {
   open: boolean;
@@ -42,14 +42,20 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
     setLocalSettings((prev) => ({ ...prev, [name]: value }));
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>, field: keyof AppSettings) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setLocalSettings(prev => ({ ...prev, [field]: reader.result as string }));
-      };
-      reader.readAsDataURL(file);
+  const handleImageSelect = async (field: keyof AppSettings, source: CameraSource) => {
+    try {
+      const image = await CapCamera.getPhoto({
+        quality: 90,
+        allowEditing: false,
+        resultType: CameraResultType.DataUrl,
+        source: source
+      });
+      
+      if (image.dataUrl) {
+        setLocalSettings(prev => ({ ...prev, [field]: image.dataUrl as string }));
+      }
+    } catch (error) {
+      console.error('Image selection error:', error);
     }
   };
 
@@ -81,18 +87,29 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
             </button>
           </div>
         ) : (
-          <label className="w-10 h-10 rounded-lg border border-dashed border-muted-foreground/30 flex items-center justify-center cursor-pointer hover:bg-muted transition-colors">
-            <ImagePlus size={16} className="text-muted-foreground" />
-            <input 
-              type="file" 
-              className="hidden" 
-              accept="image/*" 
-              onChange={(e) => handleFileUpload(e, field)} 
-            />
-          </label>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              size="icon"
+              className="w-10 h-10 rounded-lg border-dashed"
+              onClick={() => handleImageSelect(field, CameraSource.Camera)}
+              title="拍照"
+            >
+              <Camera size={16} className="text-muted-foreground" />
+            </Button>
+            <Button
+              variant="outline"
+              size="icon"
+              className="w-10 h-10 rounded-lg border-dashed"
+              onClick={() => handleImageSelect(field, CameraSource.Photos)}
+              title="相册"
+            >
+              <ImageIcon size={16} className="text-muted-foreground" />
+            </Button>
+          </div>
         )}
         <span className="text-[10px] text-muted-foreground truncate flex-1">
-          {localSettings[field] ? '已选择本地图片' : (placeholder || '点击上传本地图片')}
+          {localSettings[field] ? '已选择图片' : (placeholder || '选择图片')}
         </span>
       </div>
     </div>

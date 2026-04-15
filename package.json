@@ -12,6 +12,12 @@
   },
   "dependencies": {
     "@base-ui/react": "^1.4.0",
+    "@capacitor/camera": "^8.1.0",
+    "@capacitor/clipboard": "^8.0.1",
+    "@capacitor/core": "^8.3.0",
+    "@capacitor/filesystem": "^8.1.2",
+    "@capacitor/share": "^8.0.1",
+    "@capacitor/toast": "^8.0.1",
     "@fontsource-variable/geist": "^5.2.8",
     "@google/genai": "^1.29.0",
     "@radix-ui/react-slot": "^1.2.4",

@@ -15,11 +15,15 @@ import { SettingsDialog } from './components/Settings/SettingsDialog';
 import { DeleteHistoryDialog } from './components/Chat/DeleteHistoryDialog';
 import { Message, ChatState, AppSettings } from './types';
 import { sendMessageToGemini } from './services/gemini';
-import { Sparkles, Settings, Sun, Moon, PanelLeft, Search, Trash2, X } from 'lucide-react';
+import { Sparkles, Settings, Sun, Moon, PanelLeft, Search, Trash2, X, Download, Upload } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from './components/ui/input';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from './lib/utils';
+import { Filesystem, Directory, Encoding } from '@capacitor/filesystem';
+import { Share } from '@capacitor/share';
+import { Clipboard } from '@capacitor/clipboard';
+import { Toast } from '@capacitor/toast';
 
 const DEFAULT_SETTINGS: AppSettings = {
   userName: '用户',
@@ -209,15 +213,72 @@ export default function App() {
     setIsSelectionMode(false);
   };
 
-  const handleCopySelected = () => {
+  const handleCopySelected = async () => {
     const content = state.messages
       .filter(m => selectedMessageIds.includes(m.id))
       .map(m => `[${m.role === 'user' ? state.settings.userName : state.settings.aiName}]: ${m.content}`)
       .join('\n\n');
     
-    navigator.clipboard.writeText(content);
+    await Clipboard.write({
+      string: content
+    });
+    
+    await Toast.show({ text: '已复制到剪贴板' });
     setSelectedMessageIds([]);
     setIsSelectionMode(false);
+  };
+
+  const handleExportChat = async () => {
+    try {
+      const data = JSON.stringify(state.messages, null, 2);
+      const fileName = `chat_history_${new Date().getTime()}.json`;
+      
+      const result = await Filesystem.writeFile({
+        path: fileName,
+        data: data,
+        directory: Directory.Cache,
+        encoding: Encoding.UTF8,
+      });
+
+      await Share.share({
+        title: '导出聊天记录',
+        text: '这是我的聊天记录备份',
+        url: result.uri,
+        dialogTitle: '分享聊天记录',
+      });
+      
+      await Toast.show({ text: '导出成功' });
+    } catch (error) {
+      console.error('Export failed', error);
+      await Toast.show({ text: '导出失败' });
+    }
+  };
+
+  const handleImportChat = async () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.json';
+    input.onchange = async (e: any) => {
+      const file = e.target.files[0];
+      if (file) {
+        const reader = new FileReader();
+        reader.onload = async (event) => {
+          try {
+            const content = event.target?.result as string;
+            const messages = JSON.parse(content);
+            if (Array.isArray(messages)) {
+              setState(prev => ({ ...prev, messages }));
+              await Toast.show({ text: '导入成功' });
+            }
+          } catch (error) {
+            console.error('Import failed', error);
+            await Toast.show({ text: '导入失败：文件格式不正确' });
+          }
+        };
+        reader.readAsText(file);
+      }
+    };
+    input.click();
   };
 
   const handleSendMessage = useCallback(async (content: string, type: 'text' | 'voice' | 'image', mediaUrl?: string) => {
@@ -320,6 +381,24 @@ export default function App() {
                 }}
               >
                 <Search size={20} />
+              </Button>
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                className="w-11 h-11 rounded-xl bg-muted border text-muted-foreground hover:text-primary hover:border-primary/50 transition-colors"
+                onClick={handleExportChat}
+                title="导出记录"
+              >
+                <Download size={20} />
+              </Button>
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                className="w-11 h-11 rounded-xl bg-muted border text-muted-foreground hover:text-primary hover:border-primary/50 transition-colors"
+                onClick={handleImportChat}
+                title="导入记录"
+              >
+                <Upload size={20} />
               </Button>
               <Button 
                 variant="ghost" 
