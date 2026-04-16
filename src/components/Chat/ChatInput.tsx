@@ -39,14 +39,19 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage }) => {
     }
   }, [isRecording]);
 
+  // Auto-send when audioUrl is set
+  useEffect(() => {
+    if (audioUrl) {
+      onSendMessage('', 'voice', audioUrl);
+      setAudioUrl(null);
+    }
+  }, [audioUrl, onSendMessage, setAudioUrl]);
+
   const handleSend = () => {
-    if (text.trim() || previewImage || audioUrl) {
+    if (text.trim() || previewImage) {
       if (previewImage) {
         onSendMessage(text, 'image', previewImage);
         setPreviewImage(null);
-      } else if (audioUrl) {
-        onSendMessage(text, 'voice', audioUrl);
-        setAudioUrl(null);
       } else {
         onSendMessage(text, 'text');
       }
@@ -209,23 +214,6 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage }) => {
               </button>
             </motion.div>
           )}
-
-          {audioUrl && (
-            <motion.div 
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 10 }}
-              className="flex items-center gap-3 bg-card border p-3 rounded-2xl w-fit"
-            >
-              <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-primary">
-                <Mic size={16} />
-              </div>
-              <audio src={audioUrl} controls className="h-8 w-48 brightness-90 invert" />
-              <Button variant="ghost" size="icon" onClick={() => setAudioUrl(null)} className="rounded-full">
-                <X size={16} />
-              </Button>
-            </motion.div>
-          )}
         </AnimatePresence>
 
         <div className="flex items-center gap-3 bg-white dark:bg-[rgba(255,255,255,0.03)] border border-border rounded-[24px] p-2 h-20 shadow-sm dark:shadow-none">
@@ -256,23 +244,6 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage }) => {
           />
 
           <div className="relative flex-1 h-full flex items-center">
-            {audioUrl && (
-              <div className="absolute -top-16 left-0 right-0 p-2 flex justify-center">
-                <div className="bg-card border rounded-full px-4 py-2 flex items-center gap-3 shadow-lg animate-in fade-in slide-in-from-bottom-2">
-                  <div className="flex items-center gap-2">
-                    <Mic size={14} className="text-primary" />
-                  </div>
-                  <audio src={audioUrl} className="h-6 w-24" />
-                  <button 
-                    onClick={() => setAudioUrl(null)}
-                    className="p-1 hover:bg-muted rounded-full transition-colors"
-                  >
-                    <X size={14} />
-                  </button>
-                </div>
-              </div>
-            )}
-
             <Input
               ref={inputRef}
               value={text}

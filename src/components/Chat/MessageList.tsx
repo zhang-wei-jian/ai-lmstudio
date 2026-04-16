@@ -104,10 +104,7 @@ const VoiceMessagePlayer: React.FC<VoiceMessagePlayerProps> = ({ url }) => {
             }}
           />
         </div>
-        <div className="flex justify-between items-center px-0.5">
-          <span className="text-[10px] font-medium text-primary/60">
-            {isPlaying ? formatTime(currentTime) : "已就绪"}
-          </span>
+        <div className="flex justify-end items-center px-0.5">
           <span className="text-[10px] font-medium text-muted-foreground/60">
             {duration ? formatTime(duration) : '--:--'}
           </span>
@@ -281,25 +278,8 @@ export const MessageList: React.FC<MessageListProps> = ({
               </div>
             )}
 
-            <Avatar className={cn(
-              "w-8 h-8 border shrink-0 transition-opacity",
-              isSelectionMode && !isSelected && "opacity-50"
-            )}>
-              {message.role === 'assistant' ? (
-                <>
-                  <AvatarImage src={settings.aiAvatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${settings.aiName}`} />
-                  <AvatarFallback><Bot size={16} /></AvatarFallback>
-                </>
-              ) : (
-                <>
-                  <AvatarImage src={settings.userAvatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${settings.userName}`} />
-                  <AvatarFallback><User size={16} /></AvatarFallback>
-                </>
-              )}
-            </Avatar>
-
             <div className={cn(
-              "flex flex-col max-w-[70%] transition-opacity",
+              "flex flex-col max-w-[85%] transition-opacity",
               message.role === 'user' ? "items-end" : "items-start",
               isSelectionMode && !isSelected && "opacity-50"
             )}>
