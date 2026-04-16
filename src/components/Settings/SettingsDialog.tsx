@@ -17,12 +17,15 @@ import { Label } from '@/components/ui/label';
 import { AppSettings } from '../../types';
 import { ImagePlus, X, Camera, Image as ImageIcon } from 'lucide-react';
 import { Camera as CapCamera, CameraResultType, CameraSource } from '@capacitor/camera';
+import { motion, AnimatePresence } from 'motion/react';
+import { cn } from '../../lib/utils';
 
 interface SettingsDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   settings: AppSettings;
   onSave: (settings: AppSettings) => void;
+  onCheckUpdate: () => Promise<{ success: boolean; data?: any; error?: string }>;
 }
 
 export const SettingsDialog: React.FC<SettingsDialogProps> = ({
@@ -30,12 +33,33 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
   onOpenChange,
   settings,
   onSave,
+  onCheckUpdate,
 }) => {
   const [localSettings, setLocalSettings] = React.useState<AppSettings>(settings);
+  const [updateStatus, setUpdateStatus] = React.useState<{ type: 'error' | 'success', message: string } | null>(null);
+  const [isChecking, setIsChecking] = React.useState(false);
 
   React.useEffect(() => {
+    if (!open) {
+      setUpdateStatus(null);
+      setIsChecking(false);
+    }
     setLocalSettings(settings);
-  }, [settings]);
+  }, [settings, open]);
+
+  const handleInnerCheckUpdate = async () => {
+    setIsChecking(true);
+    setUpdateStatus(null);
+    const result = await onCheckUpdate();
+    setIsChecking(false);
+    
+    if (!result.success) {
+      setUpdateStatus({ type: 'error', message: result.error || '检测失败' });
+    } else if (result.data === 'latest') {
+      setUpdateStatus({ type: 'success', message: '当前已是最新版本' });
+    }
+    // If it's a new version, App.tsx handles the UpdateDialog
+  };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
@@ -119,7 +143,10 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[425px] bg-white dark:bg-card border-border text-foreground max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>应用设置</DialogTitle>
+          <div className="flex items-center justify-between">
+            <DialogTitle>应用设置</DialogTitle>
+            <span className="text-[10px] font-mono text-muted-foreground mr-6">v0.0.0</span>
+          </div>
         </DialogHeader>
         <div className="grid gap-4 py-4">
           <div className="grid grid-cols-4 items-center gap-4">
@@ -162,6 +189,48 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
           <div className="grid grid-cols-4 items-center gap-4">
             <Label htmlFor="systemInstruction" className="text-right text-xs">回复逻辑</Label>
             <Input id="systemInstruction" name="systemInstruction" value={localSettings.systemInstruction || ''} onChange={handleChange} className="col-span-3 h-8 text-xs" placeholder="例如：你是一个专业的程序员" />
+          </div>
+
+          <div className="border-t pt-4 mt-2">
+            <h4 className="text-xs font-semibold mb-3">GitHub 更新设置</h4>
+            <div className="space-y-3">
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="githubOwner" className="text-right text-xs">用户名</Label>
+                <Input id="githubOwner" name="githubOwner" value={localSettings.githubOwner || ''} onChange={handleChange} className="col-span-3 h-8 text-xs" placeholder="例如：lx00924" />
+              </div>
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="githubRepo" className="text-right text-xs">仓库名</Label>
+                <Input id="githubRepo" name="githubRepo" value={localSettings.githubRepo || ''} onChange={handleChange} className="col-span-3 h-8 text-xs" placeholder="例如：aether-x" />
+              </div>
+              
+              <AnimatePresence>
+                {updateStatus && (
+                  <motion.div 
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                    className={cn(
+                      "text-[10px] p-2 rounded-lg border",
+                      updateStatus.type === 'error' ? "bg-destructive/10 border-destructive/20 text-destructive" : "bg-primary/10 border-primary/20 text-primary"
+                    )}
+                  >
+                    {updateStatus.message}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              <div className="flex justify-end pr-0.5">
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  className="h-8 text-xs px-3"
+                  onClick={handleInnerCheckUpdate}
+                  disabled={isChecking}
+                >
+                  {isChecking ? '检测中...' : '检测新版本'}
+                </Button>
+              </div>
+            </div>
           </div>
         </div>
         <DialogFooter>

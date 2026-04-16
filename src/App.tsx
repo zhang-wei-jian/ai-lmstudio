@@ -13,6 +13,7 @@ import { MessageList } from './components/Chat/MessageList';
 import { ChatInput } from './components/Chat/ChatInput';
 import { SettingsDialog } from './components/Settings/SettingsDialog';
 import { DeleteHistoryDialog } from './components/Chat/DeleteHistoryDialog';
+import { UpdateDialog } from './components/Chat/UpdateDialog';
 import { Message, ChatState, AppSettings } from './types';
 import { sendMessageToGemini } from './services/gemini';
 import { Sparkles, Settings, Sun, Moon, PanelLeft, Search, Trash2, X, Download, Upload } from 'lucide-react';
@@ -34,12 +35,15 @@ const DEFAULT_SETTINGS: AppSettings = {
   apiKey: '',
   apiEndpoint: '',
   modelName: 'gemini-3-flash-preview',
+  githubOwner: 'lx00924',
+  githubRepo: 'aether-x',
 };
 
 export default function App() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isDeleteHistoryOpen, setIsDeleteHistoryOpen] = useState(false);
+  const [updateInfo, setUpdateInfo] = useState<{ version: string; body: string; url: string } | null>(null);
   const [selectedMessageIds, setSelectedMessageIds] = useState<string[]>([]);
   const [isSelectionMode, setIsSelectionMode] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -364,6 +368,47 @@ export default function App() {
     }
   }, [state.messages, state.settings]);
 
+  const handleCheckUpdate = async (): Promise<{ success: boolean; data?: any; error?: string }> => {
+    const { githubOwner, githubRepo } = state.settings;
+    if (!githubOwner || !githubRepo) {
+      return { success: false, error: '请先在设置中配置 GitHub 仓库信息' };
+    }
+
+    try {
+      const response = await fetch(`https://api.github.com/repos/${githubOwner}/${githubRepo}/releases/latest`);
+      
+      if (response.status === 404) {
+        throw new Error('未找到仓库或该仓库尚未发布任何 Release 版本。');
+      }
+      
+      if (response.status === 403) {
+        throw new Error('访问 GitHub API 频率受限，请稍后再试。');
+      }
+
+      if (!response.ok) {
+        throw new Error(`GitHub 访问失败 (HTTP ${response.status})`);
+      }
+      
+      const data = await response.json();
+      const latestVersion = data.tag_name;
+      const currentVersion = 'v0.0.0'; 
+
+      if (latestVersion !== currentVersion) {
+        setUpdateInfo({
+          version: latestVersion,
+          body: data.body,
+          url: data.html_url
+        });
+        return { success: true };
+      } else {
+        return { success: true, data: 'latest' };
+      }
+    } catch (error) {
+      console.error('Update check failed', error);
+      return { success: false, error: error instanceof Error ? error.message : '检测更新失败，请稍后重试' };
+    }
+  };
+
   const filteredMessages = state.messages.filter(msg => 
     msg.content.toLowerCase().includes(searchQuery.toLowerCase())
   );
@@ -618,6 +663,7 @@ export default function App() {
         onOpenChange={setIsSettingsOpen} 
         settings={state.settings} 
         onSave={handleSaveSettings} 
+        onCheckUpdate={handleCheckUpdate}
       />
 
       <DeleteHistoryDialog
@@ -627,6 +673,16 @@ export default function App() {
         onDeleteLast7Days={() => deleteMessagesByRange(7)}
         onDeleteAll={() => deleteMessagesByRange('all')}
       />
+
+      {updateInfo && (
+        <UpdateDialog
+          isOpen={!!updateInfo}
+          onClose={() => setUpdateInfo(null)}
+          version={updateInfo.version}
+          changelog={updateInfo.body}
+          downloadUrl={updateInfo.url}
+        />
+      )}
     </div>
   );
 }

@@ -26,6 +26,8 @@ export interface AppSettings {
   customBackground?: string;
   welcomeMessage?: string;
   systemInstruction?: string;
+  githubOwner?: string;
+  githubRepo?: string;
 }
 
 export interface ChatState {
