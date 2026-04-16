@@ -71,8 +71,10 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage }) => {
       if (image.dataUrl) {
         setPreviewImage(image.dataUrl);
       }
-    } catch (error) {
-      console.error('Camera error:', error);
+    } catch (error: any) {
+      if (error?.message !== 'User cancelled photos app') {
+        console.error('Camera error:', error);
+      }
     }
   };
 
@@ -88,8 +90,10 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage }) => {
       if (image.dataUrl) {
         setPreviewImage(image.dataUrl);
       }
-    } catch (error) {
-      console.error('Gallery error:', error);
+    } catch (error: any) {
+      if (error?.message !== 'User cancelled photos app') {
+        console.error('Gallery error:', error);
+      }
     }
   };
 

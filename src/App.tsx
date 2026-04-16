@@ -95,30 +95,48 @@ export default function App() {
 
   const [state, setState] = useState<ChatState>(() => {
     let settings = DEFAULT_SETTINGS;
+    let messages: Message[] = [];
+    
     try {
       const savedSettings = localStorage.getItem('gemini_settings');
       if (savedSettings) {
         settings = { ...DEFAULT_SETTINGS, ...JSON.parse(savedSettings) };
       }
+      
+      const savedMessages = localStorage.getItem('chat_history');
+      if (savedMessages) {
+        messages = JSON.parse(savedMessages).map((m: any) => ({
+          ...m,
+          timestamp: new Date(m.timestamp)
+        }));
+      }
     } catch (error) {
-      console.error('Failed to parse settings', error);
+      console.error('Failed to parse saved data', error);
     }
     
+    // Add a fresh welcome message for the new session
+    const sessionWelcome: Message = {
+      id: crypto.randomUUID(),
+      role: 'assistant',
+      content: settings.welcomeMessage || `你好！我是 ${settings.aiName}。欢迎回来！有什么我可以帮你的吗？`,
+      timestamp: new Date(),
+      type: 'text'
+    };
+    
+    // Combine with history if any
+    messages = [...messages, sessionWelcome];
+    
     return {
-      messages: [
-        {
-          id: crypto.randomUUID(),
-          role: 'assistant',
-          content: settings.welcomeMessage || `你好！我是 ${settings.aiName}。今天有什么我可以帮你的吗？你可以给我发送文字、图片，甚至是语音消息！`,
-          timestamp: new Date(),
-          type: 'text'
-        }
-      ],
+      messages,
       isLoading: false,
       error: null,
       settings
     };
   });
+
+  useEffect(() => {
+    localStorage.setItem('chat_history', JSON.stringify(state.messages));
+  }, [state.messages]);
 
   useEffect(() => {
     // Trigger notification when loading finishes and app is in background
