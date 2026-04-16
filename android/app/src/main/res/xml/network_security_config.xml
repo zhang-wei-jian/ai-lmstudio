@@ -1,18 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <network-security-config>
-    <!-- 显式允许局域网 IP 段的明文传输 -->
-    <domain-config cleartextTrafficPermitted="true">
-        <domain includeSubdomains="true">192.168.1.1</domain>
-        <domain includeSubdomains="true">192.168.2.1</domain>
-        <domain includeSubdomains="true">192.168.0.1</domain>
-        <domain includeSubdomains="true">localhost</domain>
-        <!-- 也可以直接针对您的特定 IP -->
-        <domain includeSubdomains="true">192.168.2.101</domain>
-    </domain-config>
-
     <base-config cleartextTrafficPermitted="true">
         <trust-anchors>
             <certificates src="system" />
+            <certificates src="user" />
         </trust-anchors>
     </base-config>
 </network-security-config>
