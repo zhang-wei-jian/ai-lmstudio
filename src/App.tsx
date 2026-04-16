@@ -145,6 +145,14 @@ export default function App() {
     }
   }, [theme]);
 
+  // Clear selection when search is disabled
+  useEffect(() => {
+    if (!isSearching) {
+      setIsSelectionMode(false);
+      setSelectedMessageIds([]);
+    }
+  }, [isSearching]);
+
   const toggleTheme = () => {
     setTheme(prev => prev === 'light' ? 'dark' : 'light');
     setIsSidebarOpen(false);
@@ -530,6 +538,7 @@ export default function App() {
             isLoading={state.isLoading} 
             settings={state.settings}
             isSelectionMode={isSelectionMode}
+            isSearching={isSearching}
             selectedIds={selectedMessageIds}
             onToggleSelection={handleToggleMessageSelection}
             onEnterSelectionMode={handleEnterSelectionMode}

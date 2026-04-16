@@ -3,40 +3,36 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect } from 'react';
+import { VoiceRecorder } from 'capacitor-voice-recorder';
 
 export function useVoiceRecorder() {
   const [isRecording, setIsRecording] = useState(false);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const chunksRef = useRef<Blob[]>([]);
-  const streamRef = useRef<MediaStream | null>(null);
+
+  useEffect(() => {
+    // Request permissions on mount
+    VoiceRecorder.requestAudioRecordingPermission();
+  }, []);
 
   const startRecording = useCallback(async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      streamRef.current = stream;
-      const mediaRecorder = new MediaRecorder(stream);
-      mediaRecorderRef.current = mediaRecorder;
-      chunksRef.current = [];
+      const { value } = await VoiceRecorder.canDeviceVoiceRecord();
+      if (!value) {
+        console.error('This device cannot record voice');
+        return;
+      }
 
-      mediaRecorder.ondataavailable = (e) => {
-        if (e.data.size > 0) {
-          chunksRef.current.push(e.data);
+      const { value: hasPermission } = await VoiceRecorder.hasAudioRecordingPermission();
+      if (!hasPermission) {
+        const { value: requested } = await VoiceRecorder.requestAudioRecordingPermission();
+        if (!requested) {
+          console.error('Permission denied');
+          return;
         }
-      };
+      }
 
-      mediaRecorder.onstop = () => {
-        const blob = new Blob(chunksRef.current, { type: 'audio/webm' });
-        const url = URL.createObjectURL(blob);
-        setAudioUrl(url);
-        if (streamRef.current) {
-          streamRef.current.getTracks().forEach(track => track.stop());
-          streamRef.current = null;
-        }
-      };
-
-      mediaRecorder.start();
+      await VoiceRecorder.startRecording();
       setIsRecording(true);
       setAudioUrl(null);
     } catch (err) {
@@ -44,21 +40,31 @@ export function useVoiceRecorder() {
     }
   }, []);
 
-  const stopRecording = useCallback(() => {
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
-      mediaRecorderRef.current.stop();
+  const stopRecording = useCallback(async () => {
+    try {
+      const result = await VoiceRecorder.stopRecording();
+      setIsRecording(false);
+      
+      if (result.value && result.value.recordDataBase64) {
+        // Create a data URL from base64
+        const mimeType = result.value.mimeType || 'audio/webm';
+        const dataUrl = `data:${mimeType};base64,${result.value.recordDataBase64}`;
+        setAudioUrl(dataUrl);
+      }
+    } catch (err) {
+      console.error('Failed to stop recording', err);
       setIsRecording(false);
     }
   }, []);
 
   useEffect(() => {
     return () => {
-      if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
-        mediaRecorderRef.current.stop();
-      }
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach(track => track.stop());
-      }
+      // Emergency stop on unmount
+      VoiceRecorder.getCurrentStatus().then(({ status }) => {
+        if (status === 'RECORDING') {
+          VoiceRecorder.stopRecording();
+        }
+      });
     };
   }, []);
 

@@ -26,6 +26,8 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage }) => {
   const longPressTimer = useRef<NodeJS.Timeout | null>(null);
   const isLongPress = useRef(false);
   const { isRecording, audioUrl, startRecording, stopRecording, setAudioUrl } = useVoiceRecorder();
+  const micLongPressTimer = useRef<NodeJS.Timeout | null>(null);
+  const isMicLongPress = useRef(false);
 
   // Auto-focus when isRecording becomes false
   useEffect(() => {
@@ -40,10 +42,10 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage }) => {
   const handleSend = () => {
     if (text.trim() || previewImage || audioUrl) {
       if (previewImage) {
-        onSendMessage(text || "发送了一张图片", 'image', previewImage);
+        onSendMessage(text, 'image', previewImage);
         setPreviewImage(null);
       } else if (audioUrl) {
-        onSendMessage(text || "发送了一段语音", 'voice', audioUrl);
+        onSendMessage(text, 'voice', audioUrl);
         setAudioUrl(null);
       } else {
         onSendMessage(text, 'text');
@@ -109,6 +111,36 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage }) => {
   const handleCameraClick = () => {
     if (!isLongPress.current) {
       takePhoto();
+    }
+  };
+
+  const handleMicDown = () => {
+    isMicLongPress.current = false;
+    micLongPressTimer.current = setTimeout(() => {
+      isMicLongPress.current = true;
+      if (!isRecording) {
+        startRecording();
+      }
+    }, 400);
+  };
+
+  const handleMicUp = () => {
+    if (micLongPressTimer.current) {
+      clearTimeout(micLongPressTimer.current);
+    }
+    
+    if (isMicLongPress.current) {
+      if (isRecording) {
+        stopRecording();
+      }
+      isMicLongPress.current = false;
+    } else {
+      // It was a click
+      if (isRecording) {
+        stopRecording();
+      } else {
+        startRecording();
+      }
     }
   };
 
@@ -220,6 +252,23 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage }) => {
           />
 
           <div className="relative flex-1 h-full flex items-center">
+            {audioUrl && (
+              <div className="absolute -top-16 left-0 right-0 p-2 flex justify-center">
+                <div className="bg-card border rounded-full px-4 py-2 flex items-center gap-3 shadow-lg animate-in fade-in slide-in-from-bottom-2">
+                  <div className="flex items-center gap-2">
+                    <Mic size={14} className="text-primary" />
+                  </div>
+                  <audio src={audioUrl} className="h-6 w-24" />
+                  <button 
+                    onClick={() => setAudioUrl(null)}
+                    className="p-1 hover:bg-muted rounded-full transition-colors"
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
+              </div>
+            )}
+
             <Input
               ref={inputRef}
               value={text}
@@ -241,7 +290,17 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage }) => {
                 "w-11 h-11 rounded-full transition-colors bg-card border",
                 isRecording ? "text-primary border-primary/50" : "text-muted-foreground"
               )}
-              onClick={isRecording ? stopRecording : startRecording}
+              onPointerDown={handleMicDown}
+              onPointerUp={handleMicUp}
+              onPointerLeave={() => {
+                if (isMicLongPress.current && isRecording) {
+                  stopRecording();
+                  isMicLongPress.current = false;
+                }
+                if (micLongPressTimer.current) {
+                  clearTimeout(micLongPressTimer.current);
+                }
+              }}
             >
               {isRecording ? <Square size={18} fill="currentColor" /> : <Mic size={18} />}
             </Button>

@@ -88,7 +88,7 @@ export async function sendMessageToGemini(
     const lastMessage = messages[messages.length - 1];
     const parts: any[] = [{ text: lastMessage.content }];
 
-    if (lastMessage.type === 'image' && lastMessage.mediaUrl) {
+    if ((lastMessage.type === 'image' || lastMessage.type === 'voice') && lastMessage.mediaUrl) {
       const base64Data = lastMessage.mediaUrl.split(',')[1];
       const mimeType = lastMessage.mediaUrl.split(';')[0].split(':')[1];
       parts.push({
