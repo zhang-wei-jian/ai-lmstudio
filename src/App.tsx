@@ -37,6 +37,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   modelName: 'gemini-3-flash-preview',
   githubOwner: 'lx00924',
   githubRepo: 'aether-x',
+  welcomeMessage: '你好！我是 Aether-X。欢迎回来！有什么我可以帮你的吗？',
 };
 
 export default function App() {
@@ -118,17 +119,17 @@ export default function App() {
       console.error('Failed to parse saved data', error);
     }
     
-    // Add a fresh welcome message for the new session
-    const sessionWelcome: Message = {
-      id: crypto.randomUUID(),
-      role: 'assistant',
-      content: settings.welcomeMessage || `你好！我是 ${settings.aiName}。欢迎回来！有什么我可以帮你的吗？`,
-      timestamp: new Date(),
-      type: 'text'
-    };
-    
-    // Combine with history if any
-    messages = [...messages, sessionWelcome];
+    // Add a fresh welcome message for the new session ONLY if it's defined and not empty
+    if (settings.welcomeMessage && settings.welcomeMessage.trim() !== '') {
+      const sessionWelcome: Message = {
+        id: crypto.randomUUID(),
+        role: 'assistant',
+        content: settings.welcomeMessage,
+        timestamp: new Date(),
+        type: 'text'
+      };
+      messages = [...messages, sessionWelcome];
+    }
     
     return {
       messages,
@@ -391,7 +392,7 @@ export default function App() {
       
       const data = await response.json();
       const latestVersion = data.tag_name;
-      const currentVersion = 'v0.0.0'; 
+      const currentVersion = localStorage.getItem('app_version') || 'v0.0.0'; 
 
       if (latestVersion !== currentVersion) {
         setUpdateInfo({

@@ -60,13 +60,14 @@ export const UpdateDialog: React.FC<UpdateDialogProps> = ({
           <Button 
             className="flex-1 rounded-xl h-11 bg-primary text-primary-foreground shadow-lg shadow-primary/20 hover:opacity-90"
             onClick={() => {
-              window.open(downloadUrl, '_blank');
-              onClose();
+              // Store current version in storage to suppress next check if needed
+              localStorage.setItem('app_version', version);
+              // Force reload from server to get new assets
+              window.location.reload();
             }}
           >
-            <Download size={16} className="mr-2" />
-            立即更新
-            <ExternalLink size={12} className="ml-1 opacity-50" />
+            <Rocket size={16} className="mr-2" />
+            立即重启更新
           </Button>
         </DialogFooter>
       </DialogContent>

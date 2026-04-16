@@ -145,7 +145,9 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
         <DialogHeader>
           <div className="flex items-center justify-between">
             <DialogTitle>应用设置</DialogTitle>
-            <span className="text-[10px] font-mono text-muted-foreground mr-6">v0.0.0</span>
+            <span className="text-[10px] font-mono text-muted-foreground mr-6">
+              {localStorage.getItem('app_version') || 'v0.0.0'}
+            </span>
           </div>
         </DialogHeader>
         <div className="grid gap-4 py-4">
