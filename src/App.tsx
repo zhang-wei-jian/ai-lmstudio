@@ -16,7 +16,7 @@ import { DeleteHistoryDialog } from './components/Chat/DeleteHistoryDialog';
 import { UpdateDialog } from './components/Chat/UpdateDialog';
 import { Message, ChatState, AppSettings } from './types';
 import { sendMessageToGemini } from './services/gemini';
-import { Sparkles, Settings, Sun, Moon, PanelLeft, Search, Trash2, X, Download, Upload } from 'lucide-react';
+import { Sparkles, Settings, Sun, Moon, PanelLeft, Search, Trash2, X, Download, Upload, Calendar, Image } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from './components/ui/input';
 import { motion, AnimatePresence } from 'motion/react';
@@ -34,9 +34,9 @@ const DEFAULT_SETTINGS: AppSettings = {
   aiAvatar: '',
   apiKey: '',
   apiEndpoint: '',
-  modelName: 'gemini-3-flash-preview',
-  githubOwner: 'lx00924',
-  githubRepo: 'aether-x',
+  modelName: '',
+  githubOwner: 'LX00924-LX',
+  githubRepo: 'ai-lmstudio',
   welcomeMessage: '你好！我是 Aether-X。欢迎回来！有什么我可以帮你的吗？',
 };
 
@@ -48,7 +48,10 @@ export default function App() {
   const [selectedMessageIds, setSelectedMessageIds] = useState<string[]>([]);
   const [isSelectionMode, setIsSelectionMode] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedDate, setSelectedDate] = useState('');
+  const [isImageFilter, setIsImageFilter] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
+  const [quotedMessage, setQuotedMessage] = useState<Message | null>(null);
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
     const savedTheme = localStorage.getItem('app_theme');
     return (savedTheme as 'light' | 'dark') || 'dark';
@@ -244,6 +247,13 @@ export default function App() {
     setIsSelectionMode(false);
   };
 
+  const handleDeleteMessage = (id: string) => {
+    setState(prev => ({
+      ...prev,
+      messages: prev.messages.filter(m => m.id !== id)
+    }));
+  };
+
   const handleCopySelected = async () => {
     const content = state.messages
       .filter(m => selectedMessageIds.includes(m.id))
@@ -262,8 +272,28 @@ export default function App() {
   const handleExportChat = async () => {
     try {
       const data = JSON.stringify(state.messages, null, 2);
-      const fileName = `chat_history_${new Date().getTime()}.json`;
+      const fileName = `chat_history_${new Date().toISOString().split('T')[0]}.json`;
       
+      // Check if we are in a web environment (standard browser)
+      // Capactior Share often fails in web if browser doesn't support Web Share API or if it's not HTTPS
+      const isWeb = !window.hasOwnProperty('Capacitor') || (window as any).Capacitor?.getPlatform() === 'web';
+      
+      if (isWeb) {
+        const blob = new Blob([data], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = fileName;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+        await Toast.show({ text: '已开始下载' });
+        setIsSidebarOpen(false);
+        return;
+      }
+
+      // Capacitor logic for native mobile
       const result = await Filesystem.writeFile({
         path: fileName,
         data: data,
@@ -279,6 +309,7 @@ export default function App() {
       });
       
       await Toast.show({ text: '导出成功' });
+      setIsSidebarOpen(false);
     } catch (error) {
       console.error('Export failed', error);
       await Toast.show({ text: '导出失败' });
@@ -312,6 +343,44 @@ export default function App() {
     input.click();
   };
 
+  const handleQuote = (message: Message) => {
+    setQuotedMessage(message);
+  };
+
+  const handleTranscribe = async (message: Message) => {
+    if (message.type !== 'voice' || !message.mediaUrl || message.transcribedText) return;
+
+    setState(prev => ({ ...prev, isLoading: true }));
+    try {
+      // Use the existing sendMessageToGemini but with a specific transcription prompt
+      const transcriptionPrompt: Message = {
+        id: crypto.randomUUID(),
+        role: 'user',
+        content: "请将这段语音转录为文字。只返回转录内容，不要有任何其他解释。",
+        timestamp: new Date(),
+        type: 'voice',
+        mediaUrl: message.mediaUrl
+      };
+
+      const result = await sendMessageToGemini([transcriptionPrompt], state.settings);
+      
+      setState(prev => ({
+        ...prev,
+        messages: prev.messages.map(msg => 
+          msg.id === message.id 
+            ? { ...msg, transcribedText: result } 
+            : msg
+        )
+      }));
+      await Toast.show({ text: '转录成功' });
+    } catch (error) {
+      console.error('Transcription failed', error);
+      await Toast.show({ text: '语音转文字失败，请检查网络或 API 配置' });
+    } finally {
+      setState(prev => ({ ...prev, isLoading: false }));
+    }
+  };
+
   const handleSendMessage = useCallback(async (content: string, type: 'text' | 'voice' | 'image', mediaUrl?: string) => {
     const userMessage: Message = {
       id: crypto.randomUUID(),
@@ -319,8 +388,16 @@ export default function App() {
       content,
       timestamp: new Date(),
       type,
-      mediaUrl
+      mediaUrl,
+      quote: quotedMessage ? {
+        id: quotedMessage.id,
+        userName: quotedMessage.role === 'assistant' ? state.settings.aiName : state.settings.userName,
+        content: quotedMessage.content || (quotedMessage.type === 'voice' ? '[语音消息]' : '[图片消息]'),
+        timestamp: quotedMessage.timestamp
+      } : undefined
     };
+
+    setQuotedMessage(null); // Clear quote after sending
 
     if (!state.settings.apiKey && !process.env.GEMINI_API_KEY) {
       setState(prev => ({ ...prev, error: "请在设置中配置 API Key 以开始聊天。" }));
@@ -367,7 +444,7 @@ export default function App() {
     } finally {
       setState(prev => ({ ...prev, isLoading: false }));
     }
-  }, [state.messages, state.settings]);
+  }, [state.messages, state.settings, quotedMessage]);
 
   const handleCheckUpdate = async (): Promise<{ success: boolean; data?: any; error?: string }> => {
     const { githubOwner, githubRepo } = state.settings;
@@ -410,9 +487,12 @@ export default function App() {
     }
   };
 
-  const filteredMessages = state.messages.filter(msg => 
-    msg.content.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filteredMessages = state.messages.filter(msg => {
+    const matchesQuery = msg.content.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesDate = !selectedDate || new Date(msg.timestamp).toISOString().split('T')[0] === selectedDate;
+    const matchesImage = !isImageFilter || msg.type === 'image';
+    return matchesQuery && matchesDate && matchesImage;
+  });
 
   return (
     <div className="flex h-screen bg-background text-foreground overflow-hidden relative">
@@ -461,7 +541,7 @@ export default function App() {
                 onClick={handleExportChat}
                 title="导出记录"
               >
-                <Download size={20} />
+                <Upload size={20} />
               </Button>
               <Button 
                 variant="ghost" 
@@ -470,7 +550,7 @@ export default function App() {
                 onClick={handleImportChat}
                 title="导入记录"
               >
-                <Upload size={20} />
+                <Download size={20} />
               </Button>
               <Button 
                 variant="ghost" 
@@ -530,23 +610,65 @@ export default function App() {
                     exit={{ opacity: 0, y: 10 }}
                     className="pointer-events-auto w-64 sm:w-80 flex items-center gap-2"
                   >
-                    <div className="relative flex-1">
-                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
-                      <Input
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        placeholder="搜索聊天记录..."
-                        className="pl-9 h-9 rounded-full bg-muted/50 border-muted-foreground/20 focus-visible:ring-primary/20"
-                        autoFocus
-                      />
-                      {searchQuery && (
-                        <button 
-                          onClick={() => setSearchQuery('')}
-                          className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground pointer-events-auto"
+                    <div className="relative flex-1 flex items-center gap-2">
+                      <div className="relative flex-1">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
+                        <Input
+                          value={searchQuery}
+                          onChange={(e) => setSearchQuery(e.target.value)}
+                          placeholder="搜索聊天内容..."
+                          className="pl-9 h-9 rounded-full bg-muted/50 border-muted-foreground/20 focus-visible:ring-primary/20"
+                          autoFocus
+                        />
+                        {searchQuery && (
+                          <button 
+                            onClick={() => setSearchQuery('')}
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground pointer-events-auto"
+                          >
+                            <span className="text-xs">×</span>
+                          </button>
+                        )}
+                      </div>
+
+                      <div className="relative group/date">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className={cn(
+                            "rounded-full w-9 h-9 bg-muted border border-muted-foreground/20 text-muted-foreground shrink-0 transition-all",
+                            selectedDate && "text-primary border-primary/40 bg-primary/5"
+                          )}
                         >
-                          <span className="text-xs">×</span>
-                        </button>
-                      )}
+                          <Calendar size={16} />
+                          <input 
+                            type="date"
+                            value={selectedDate}
+                            onChange={(e) => setSelectedDate(e.target.value)}
+                            className="absolute inset-0 opacity-0 cursor-pointer"
+                          />
+                        </Button>
+                        {selectedDate && (
+                          <button 
+                            onClick={() => setSelectedDate('')}
+                            className="absolute -top-1 -right-1 w-4 h-4 bg-destructive text-destructive-foreground rounded-full flex items-center justify-center text-[10px] shadow-sm active:scale-95 transition-transform"
+                          >
+                            <X size={10} strokeWidth={3} />
+                          </button>
+                        )}
+                      </div>
+
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className={cn(
+                          "rounded-full w-9 h-9 bg-muted border border-muted-foreground/20 text-muted-foreground shrink-0 transition-all",
+                          isImageFilter && "text-primary border-primary/40 bg-primary/5"
+                        )}
+                        onClick={() => setIsImageFilter(!isImageFilter)}
+                        title="只显示图片"
+                      >
+                        <Image size={16} />
+                      </Button>
                     </div>
                     <Button
                       variant="ghost"
@@ -555,6 +677,8 @@ export default function App() {
                       onClick={() => {
                         setIsSearching(false);
                         setSearchQuery('');
+                        setSelectedDate('');
+                        setIsImageFilter(false);
                       }}
                     >
                       <X size={16} />
@@ -606,10 +730,13 @@ export default function App() {
             selectedIds={selectedMessageIds}
             onToggleSelection={handleToggleMessageSelection}
             onEnterSelectionMode={handleEnterSelectionMode}
+            onQuote={handleQuote}
+            onTranscribe={handleTranscribe}
+            onDelete={handleDeleteMessage}
           />
 
           {/* Input Area */}
-          <div className="p-8 relative z-10">
+          <div className={cn("p-8 relative z-10", !isSelectionMode && isSearching && "hidden")}>
             <AnimatePresence mode="wait">
               {isSelectionMode ? (
                 <motion.div
@@ -651,7 +778,11 @@ export default function App() {
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -20 }}
                 >
-                  <ChatInput onSendMessage={handleSendMessage} />
+                  <ChatInput 
+                    onSendMessage={handleSendMessage} 
+                    quotedMessage={quotedMessage}
+                    onCancelQuote={() => setQuotedMessage(null)}
+                  />
                 </motion.div>
               )}
             </AnimatePresence>

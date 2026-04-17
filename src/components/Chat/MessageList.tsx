@@ -8,18 +8,32 @@ import ReactMarkdown from 'react-markdown';
 import { Message, AppSettings } from '../../types';
 import { cn, formatMessageDate } from '../../lib/utils';
 import { Avatar, AvatarFallback, AvatarImage } from '../ui/avatar';
-import { motion } from 'motion/react';
-import { Bot, User, Mic, CheckCircle2, Circle, Play, Pause } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
+import { Bot, User, Mic, CheckCircle2, Circle, Play, Pause, Copy, Quote, Languages, RefreshCcw, Target, Trash2 } from 'lucide-react';
+import { Clipboard } from '@capacitor/clipboard';
+import { Toast } from '@capacitor/toast';
 
 interface VoiceMessagePlayerProps {
   url: string;
+  onReplay?: (play: () => void) => void;
 }
 
-const VoiceMessagePlayer: React.FC<VoiceMessagePlayerProps> = ({ url }) => {
+const VoiceMessagePlayer: React.FC<VoiceMessagePlayerProps> = ({ url, onReplay }) => {
   const audioRef = React.useRef<HTMLAudioElement>(null);
   const [isPlaying, setIsPlaying] = React.useState(false);
   const [duration, setDuration] = React.useState<number | null>(null);
   const [currentTime, setCurrentTime] = React.useState(0);
+
+  React.useEffect(() => {
+    if (onReplay && audioRef.current) {
+      onReplay(() => {
+        if (audioRef.current) {
+          audioRef.current.currentTime = 0;
+          audioRef.current.play();
+        }
+      });
+    }
+  }, [onReplay]);
 
   const formatTime = (time: number) => {
     const minutes = Math.floor(time / 60);
@@ -123,6 +137,33 @@ const VoiceMessagePlayer: React.FC<VoiceMessagePlayerProps> = ({ url }) => {
   );
 };
 
+const QuoteDisplay: React.FC<{ quote: Message['quote']; onLocate?: (id: string) => void }> = ({ quote, onLocate }) => {
+  if (!quote) return null;
+  return (
+    <div className="mb-2 p-2 rounded-lg bg-black/5 dark:bg-white/5 border-l-2 border-primary/50 text-xs text-muted-foreground italic relative group/quote">
+      <div className="flex items-center justify-between mb-0.5">
+        <span className="font-semibold not-italic text-primary/70">{quote.userName}</span>
+        <div className="flex items-center gap-2">
+           <span className="text-[10px] opacity-60 not-italic font-normal">{formatMessageDate(quote.timestamp)}</span>
+           <button 
+             onClick={(e) => {
+               e.stopPropagation();
+               onLocate?.(quote.id);
+             }}
+             className="p-1 rounded-md hover:bg-primary/20 text-primary opacity-0 group-hover/quote:opacity-100 transition-opacity"
+             title="点击定位到引用消息"
+           >
+             <Target size={12} />
+           </button>
+        </div>
+      </div>
+      <div className="line-clamp-2">
+        {quote.content}
+      </div>
+    </div>
+  );
+};
+
 interface MessageListProps {
   messages: Message[];
   isLoading: boolean;
@@ -132,6 +173,9 @@ interface MessageListProps {
   selectedIds: string[];
   onToggleSelection: (id: string) => void;
   onEnterSelectionMode: (id: string) => void;
+  onQuote?: (message: Message) => void;
+  onTranscribe?: (message: Message) => void;
+  onDelete?: (id: string) => void;
 }
 
 export const MessageList: React.FC<MessageListProps> = ({ 
@@ -142,14 +186,58 @@ export const MessageList: React.FC<MessageListProps> = ({
   isSearching,
   selectedIds,
   onToggleSelection,
-  onEnterSelectionMode
+  onEnterSelectionMode,
+  onQuote,
+  onTranscribe,
+  onDelete
 }) => {
   const scrollRef = React.useRef<HTMLDivElement>(null);
   const longPressTimer = React.useRef<NodeJS.Timeout | null>(null);
   const [isDragging, setIsDragging] = React.useState(false);
+  const [contextMenu, setContextMenu] = React.useState<{ id: string; x: number; y: number } | null>(null);
+  const [highlightMessageId, setHighlightMessageId] = React.useState<string | null>(null);
+  const messageRefs = React.useRef<{ [key: string]: HTMLDivElement | null }>({});
+  const replayRefs = React.useRef<{ [key: string]: () => void }>({});
   const lastSelectedId = React.useRef<string | null>(null);
 
-  const handleMouseDown = (id: string) => {
+  const scrollToMessage = (id: string) => {
+    const element = messageRefs.current[id];
+    if (element) {
+      element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      setHighlightMessageId(id);
+      setTimeout(() => setHighlightMessageId(null), 2000);
+    } else {
+      Toast.show({ text: '找不到原消息' });
+    }
+  };
+
+  const handleCopy = async (text: string) => {
+    await Clipboard.write({ string: text });
+    await Toast.show({ text: '已复制到剪贴板' });
+    setContextMenu(null);
+  };
+
+  const handleQuoteClick = (message: Message) => {
+    onQuote?.(message);
+    setContextMenu(null);
+  };
+
+  const handleTranscribeClick = (message: Message) => {
+    onTranscribe?.(message);
+    setContextMenu(null);
+  };
+
+  const handleReplayClick = (id: string) => {
+    replayRefs.current[id]?.();
+    setContextMenu(null);
+  };
+
+  const handleDeleteClick = (id: string) => {
+    onDelete?.(id);
+    setContextMenu(null);
+  };
+
+  const handleMouseDown = (e: React.MouseEvent, id: string) => {
     if (isSelectionMode) {
       if (isSearching) {
         setIsDragging(true);
@@ -158,25 +246,36 @@ export const MessageList: React.FC<MessageListProps> = ({
       onToggleSelection(id);
       return;
     }
-    if (!isSearching) return;
+    
+    const x = e.clientX;
+    const y = e.clientY;
+
     longPressTimer.current = setTimeout(() => {
-      onEnterSelectionMode(id);
-      setIsDragging(true);
-      lastSelectedId.current = id;
+      if (isSearching) {
+        onEnterSelectionMode(id);
+        setIsDragging(true);
+        lastSelectedId.current = id;
+      } else {
+        setContextMenu({ id, x, y });
+      }
     }, 600);
   };
 
-  const handleTouchStart = (id: string) => {
-    if (!isSearching && !isSelectionMode) return;
-    // For touch, we want to trigger long press immediately
+  const handleTouchStart = (e: React.TouchEvent, id: string) => {
+    if (isSelectionMode) return;
+    
+    const touch = e.touches[0];
+    const x = touch.clientX;
+    const y = touch.clientY;
+
     longPressTimer.current = setTimeout(() => {
-      if (!isSelectionMode) {
-        onEnterSelectionMode(id);
-      }
       if (isSearching) {
+        onEnterSelectionMode(id);
         setIsDragging(true);
+        lastSelectedId.current = id;
+      } else {
+        setContextMenu({ id, x, y });
       }
-      lastSelectedId.current = id;
     }, 600);
   };
 
@@ -226,17 +325,21 @@ export const MessageList: React.FC<MessageListProps> = ({
     return () => window.removeEventListener('mouseup', handleGlobalMouseUp);
   }, []);
 
+  const isFirstScroll = React.useRef(true);
+
   React.useEffect(() => {
     const scrollToBottom = () => {
       if (scrollRef.current && !isSelectionMode) {
+        const isFirst = isFirstScroll.current;
         scrollRef.current.scrollTo({
           top: scrollRef.current.scrollHeight,
-          behavior: 'smooth'
+          behavior: isFirst ? 'auto' : 'smooth'
         });
+        if (isFirst) isFirstScroll.current = false;
       }
     };
     
-    const timeoutId = setTimeout(scrollToBottom, 100);
+    const timeoutId = setTimeout(scrollToBottom, isFirstScroll.current ? 0 : 100);
     return () => clearTimeout(timeoutId);
   }, [messages, isLoading, isSelectionMode]);
 
@@ -252,20 +355,22 @@ export const MessageList: React.FC<MessageListProps> = ({
         return (
           <motion.div
             key={message.id}
+            ref={(el) => { messageRefs.current[message.id] = el; }}
             data-message-id={message.id}
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            onMouseDown={() => handleMouseDown(message.id)}
+            onMouseDown={(e) => handleMouseDown(e, message.id)}
             onMouseUp={handleTouchEnd}
             onMouseEnter={() => handleMouseEnter(message.id)}
-            onTouchStart={() => handleTouchStart(message.id)}
+            onTouchStart={(e) => handleTouchStart(e, message.id)}
             onTouchEnd={handleTouchEnd}
             onClick={() => handleClick(message.id)}
             className={cn(
-              "flex w-full gap-3 transition-all duration-300",
+              "flex w-full gap-3 transition-all duration-300 rounded-xl p-1",
               message.role === 'user' ? "flex-row-reverse" : "flex-row",
               isSelectionMode && "cursor-pointer active:scale-[0.98]",
-              isSelected && "opacity-100 scale-[1.02]"
+              isSelected && "opacity-100 scale-[1.02]",
+              highlightMessageId === message.id && "animate-pulse-highlight"
             )}
           >
             {isSelectionMode && (
@@ -289,12 +394,15 @@ export const MessageList: React.FC<MessageListProps> = ({
                 </span>
               </div>
               <div className={cn(
-                "px-5 py-4 rounded-[20px] text-[15px] leading-relaxed transition-all",
+                "px-5 py-4 rounded-[20px] text-[15px] leading-relaxed transition-all relative overflow-hidden",
                 message.role === 'user' 
                   ? "bg-white dark:bg-card border border-border rounded-br-[4px] text-black dark:text-foreground" 
                   : "bg-white dark:bg-card border border-border rounded-bl-[4px] text-black dark:text-foreground",
-                isSelected && "ring-2 ring-primary/50 border-primary/50 shadow-lg shadow-primary/10"
+                isSelected && "ring-2 ring-primary/50 border-primary/50 shadow-lg shadow-primary/10",
+                contextMenu?.id === message.id && "ring-2 ring-primary/30 scale-[0.99]"
               )}>
+                <QuoteDisplay quote={message.quote} onLocate={scrollToMessage} />
+
                 {message.type === 'image' && message.mediaUrl && (
                   <img 
                     src={message.mediaUrl} 
@@ -305,7 +413,18 @@ export const MessageList: React.FC<MessageListProps> = ({
                 )}
                 
                 {message.type === 'voice' && message.mediaUrl && (
-                  <VoiceMessagePlayer url={message.mediaUrl} />
+                  <>
+                    <VoiceMessagePlayer 
+                      url={message.mediaUrl} 
+                      onReplay={(play) => replayRefs.current[message.id] = play}
+                    />
+                    {message.transcribedText && (
+                      <div className="mt-3 pt-3 border-t border-border/30 text-xs italic text-muted-foreground/80 leading-relaxed font-mono">
+                         <Languages size={10} className="inline mr-1 opacity-50" />
+                         {message.transcribedText}
+                      </div>
+                    )}
+                  </>
                 )}
 
                 {message.content && (
@@ -343,6 +462,91 @@ export const MessageList: React.FC<MessageListProps> = ({
           </div>
         </motion.div>
       )}
+
+      {/* Context Menu Overlay */}
+      <AnimatePresence>
+        {contextMenu && (
+          <>
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-[60] bg-transparent"
+              onClick={() => setContextMenu(null)}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                setContextMenu(null);
+              }}
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 10 }}
+              className="fixed z-[70] bg-popover border border-border rounded-2xl shadow-2xl overflow-hidden min-w-[140px] p-1.5 backdrop-blur-md"
+              style={{ 
+                left: Math.min(window.innerWidth - 160, Math.max(20, contextMenu.x - 70)),
+                top: Math.min(window.innerHeight - 200, contextMenu.y - 120)
+              }}
+            >
+              <div className="flex flex-col gap-0.5">
+                {(() => {
+                  const message = messages.find(m => m.id === contextMenu.id);
+                  if (!message) return null;
+
+                  return (
+                    <>
+                      {message.type !== 'voice' && (
+                        <button 
+                          className="flex items-center gap-3 w-full px-3 py-2.5 text-sm hover:bg-muted rounded-xl transition-colors active:bg-muted/80"
+                          onClick={() => handleCopy(message.content)}
+                        >
+                          <Copy size={16} className="text-muted-foreground" />
+                          <span>复制文本</span>
+                        </button>
+                      )}
+                      <button 
+                        className="flex items-center gap-3 w-full px-3 py-2.5 text-sm hover:bg-muted rounded-xl transition-colors active:bg-muted/80"
+                        onClick={() => handleQuoteClick(message)}
+                      >
+                        <Quote size={16} className="text-muted-foreground" />
+                        <span>引用消息</span>
+                      </button>
+                      {message.type === 'voice' && (
+                        <>
+                          <button 
+                            className="flex items-center gap-3 w-full px-3 py-2.5 text-sm hover:bg-muted rounded-xl transition-colors active:bg-muted/80"
+                            onClick={() => handleTranscribeClick(message)}
+                          >
+                            <Languages size={16} className="text-muted-foreground" />
+                            <span>转为文本</span>
+                          </button>
+                          <button 
+                            className="flex items-center gap-3 w-full px-3 py-2.5 text-sm hover:bg-muted rounded-xl transition-colors active:bg-muted/80"
+                            onClick={() => handleReplayClick(message.id)}
+                          >
+                            <RefreshCcw size={16} className="text-muted-foreground" />
+                            <span>重新播放</span>
+                          </button>
+                        </>
+                      )}
+
+                      <div className="h-px bg-border/50 my-1 mx-1" />
+                      
+                      <button 
+                        className="flex items-center gap-3 w-full px-3 py-2.5 text-sm hover:bg-destructive/10 text-destructive rounded-xl transition-colors active:bg-destructive/20"
+                        onClick={() => handleDeleteClick(message.id)}
+                      >
+                        <Trash2 size={16} />
+                        <span>删除消息</span>
+                      </button>
+                    </>
+                  );
+                })()}
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
     </div>
   );
 };
