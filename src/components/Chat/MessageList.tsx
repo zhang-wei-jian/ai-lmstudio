@@ -170,6 +170,8 @@ interface MessageListProps {
   settings: AppSettings;
   isSelectionMode: boolean;
   isSearching: boolean;
+  searchQuery?: string;
+  activeSearchMatchId?: string;
   selectedIds: string[];
   onToggleSelection: (id: string) => void;
   onEnterSelectionMode: (id: string) => void;
@@ -178,12 +180,40 @@ interface MessageListProps {
   onDelete?: (id: string) => void;
 }
 
+const HighlightedText: React.FC<{ text: string; query: string; isActive?: boolean }> = ({ text, query, isActive }) => {
+  if (!query.trim()) return <>{text}</>;
+  
+  const parts = text.split(new RegExp(`(${query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi'));
+  
+  return (
+    <>
+      {parts.map((part, i) => 
+        part.toLowerCase() === query.toLowerCase() 
+          ? <span 
+              key={i} 
+              className={cn(
+                "rounded-sm px-0.5 leading-none inline-block transition-colors duration-200",
+                isActive 
+                  ? "bg-orange-500/30 text-orange-600 font-black border-b border-orange-500/60 ring-1 ring-orange-500/20" 
+                  : "bg-primary/20 text-primary font-bold border-b border-primary/40"
+              )}
+            >
+              {part}
+            </span> 
+          : part
+      )}
+    </>
+  );
+};
+
 export const MessageList: React.FC<MessageListProps> = ({ 
   messages, 
   isLoading, 
   settings,
   isSelectionMode,
   isSearching,
+  searchQuery = '',
+  activeSearchMatchId,
   selectedIds,
   onToggleSelection,
   onEnterSelectionMode,
@@ -326,22 +356,58 @@ export const MessageList: React.FC<MessageListProps> = ({
   }, []);
 
   const isFirstScroll = React.useRef(true);
+  const isNavigatingSearchMatch = React.useRef(false);
+  const prevIsSearching = React.useRef(isSearching);
 
   React.useEffect(() => {
+    const searchStatusChanged = prevIsSearching.current !== isSearching;
+    const searchCancelled = prevIsSearching.current && !isSearching;
+    const isFirst = isFirstScroll.current;
+    
+    // Update the ref for next render
+    prevIsSearching.current = isSearching;
+
     const scrollToBottom = () => {
-      if (scrollRef.current && !isSelectionMode) {
-        const isFirst = isFirstScroll.current;
+      if (scrollRef.current && !isSelectionMode && !isNavigatingSearchMatch.current) {
+        // Use instant scroll if it's the first scroll OR if search status just changed (on/off)
+        const shouldBeInstant = isFirst || searchStatusChanged;
+        
         scrollRef.current.scrollTo({
           top: scrollRef.current.scrollHeight,
-          behavior: isFirst ? 'auto' : 'smooth'
+          behavior: shouldBeInstant ? 'auto' : 'smooth'
         });
+        
         if (isFirst) isFirstScroll.current = false;
       }
     };
     
-    const timeoutId = setTimeout(scrollToBottom, isFirstScroll.current ? 0 : 100);
+    // Use a slightly longer delay if search cancelled to ensure DOM is fully updated
+    const timeoutId = setTimeout(scrollToBottom, (isFirst || searchStatusChanged) ? 0 : 100);
     return () => clearTimeout(timeoutId);
-  }, [messages, isLoading, isSelectionMode]);
+  }, [messages, isLoading, isSelectionMode, isSearching]);
+
+  // Scroll to search match
+  React.useEffect(() => {
+    if (isSearching && activeSearchMatchId) {
+      isNavigatingSearchMatch.current = true;
+      const element = messageRefs.current[activeSearchMatchId];
+      if (element) {
+        element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        setHighlightMessageId(activeSearchMatchId);
+        
+        // Allow auto-scroll again after a delay
+        const timer = setTimeout(() => {
+          isNavigatingSearchMatch.current = false;
+          setHighlightMessageId(null);
+        }, 1500);
+        return () => clearTimeout(timer);
+      } else {
+        isNavigatingSearchMatch.current = false;
+      }
+    } else {
+      isNavigatingSearchMatch.current = false;
+    }
+  }, [activeSearchMatchId, isSearching]);
 
   return (
     <div 
@@ -432,7 +498,17 @@ export const MessageList: React.FC<MessageListProps> = ({
                     "prose prose-sm dark:prose-invert max-w-none",
                     (message.type === 'image' || message.type === 'voice') && "mt-2 pt-2 border-t border-border/50"
                   )}>
-                    <ReactMarkdown>{message.content}</ReactMarkdown>
+                    {isSearching ? (
+                      <div className="whitespace-pre-wrap">
+                        <HighlightedText 
+                          text={message.content} 
+                          query={searchQuery} 
+                          isActive={message.id === activeSearchMatchId}
+                        />
+                      </div>
+                    ) : (
+                      <ReactMarkdown>{message.content}</ReactMarkdown>
+                    )}
                   </div>
                 )}
               </div>
@@ -485,7 +561,9 @@ export const MessageList: React.FC<MessageListProps> = ({
               className="fixed z-[70] bg-popover border border-border rounded-2xl shadow-2xl overflow-hidden min-w-[140px] p-1.5 backdrop-blur-md"
               style={{ 
                 left: Math.min(window.innerWidth - 160, Math.max(20, contextMenu.x - 70)),
-                top: Math.min(window.innerHeight - 200, contextMenu.y - 120)
+                top: contextMenu.y > window.innerHeight - 200 
+                  ? contextMenu.y - 210 // Pop up if near bottom
+                  : contextMenu.y + 10  // Pop down normally
               }}
             >
               <div className="flex flex-col gap-0.5">

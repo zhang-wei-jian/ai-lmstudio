@@ -16,7 +16,7 @@ import { DeleteHistoryDialog } from './components/Chat/DeleteHistoryDialog';
 import { UpdateDialog } from './components/Chat/UpdateDialog';
 import { Message, ChatState, AppSettings } from './types';
 import { sendMessageToGemini } from './services/gemini';
-import { Sparkles, Settings, Sun, Moon, PanelLeft, Search, Trash2, X, Download, Upload, Calendar, Image } from 'lucide-react';
+import { Sparkles, Settings, Sun, Moon, PanelLeft, Search, Trash2, X, Download, Upload, Calendar, Image, ChevronUp, ChevronDown, Filter, Eye, EyeOff } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from './components/ui/input';
 import { motion, AnimatePresence } from 'motion/react';
@@ -50,6 +50,8 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedDate, setSelectedDate] = useState('');
   const [isImageFilter, setIsImageFilter] = useState(false);
+  const [searchMatchIndex, setSearchMatchIndex] = useState(-1);
+  const [hideNonMatches, setHideNonMatches] = useState(true);
   const [isSearching, setIsSearching] = useState(false);
   const [quotedMessage, setQuotedMessage] = useState<Message | null>(null);
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
@@ -122,8 +124,8 @@ export default function App() {
       console.error('Failed to parse saved data', error);
     }
     
-    // Add a fresh welcome message for the new session ONLY if it's defined and not empty
-    if (settings.welcomeMessage && settings.welcomeMessage.trim() !== '') {
+    // Add a fresh welcome message for the new session ONLY if history is empty
+    if (messages.length === 0 && settings.welcomeMessage && settings.welcomeMessage.trim() !== '') {
       const sessionWelcome: Message = {
         id: crypto.randomUUID(),
         role: 'assistant',
@@ -196,12 +198,13 @@ export default function App() {
 
   const deleteMessagesByRange = (days: number | 'all') => {
     setState(prev => {
-      const welcomeMessage = prev.messages.find(m => m.id === '1' || m.id === 'welcome');
+      // The first message is effectively the welcome message if it exists
+      const firstMessage = prev.messages[0];
       
       if (days === 'all') {
         return {
           ...prev,
-          messages: welcomeMessage ? [welcomeMessage] : []
+          messages: firstMessage?.role === 'assistant' ? [firstMessage] : []
         };
       }
 
@@ -209,8 +212,8 @@ export default function App() {
       cutoff.setDate(cutoff.getDate() - days);
       cutoff.setHours(0, 0, 0, 0);
 
-      const filtered = prev.messages.filter(m => {
-        if (m.id === '1' || m.id === 'welcome') return true;
+      const filtered = prev.messages.filter((m, index) => {
+        if (index === 0 && m.role === 'assistant') return true;
         return new Date(m.timestamp) < cutoff;
       });
 
@@ -487,12 +490,36 @@ export default function App() {
     }
   };
 
-  const filteredMessages = state.messages.filter(msg => {
-    const matchesQuery = msg.content.toLowerCase().includes(searchQuery.toLowerCase());
+  const matchingMessages = state.messages.filter(msg => {
+    if (!searchQuery && !selectedDate && !isImageFilter) return false;
+    
+    const matchesQuery = !searchQuery || msg.content.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesDate = !selectedDate || new Date(msg.timestamp).toISOString().split('T')[0] === selectedDate;
     const matchesImage = !isImageFilter || msg.type === 'image';
     return matchesQuery && matchesDate && matchesImage;
   });
+
+  const filteredMessages = isSearching && hideNonMatches ? matchingMessages : state.messages;
+
+  const handleNextMatch = () => {
+    if (matchingMessages.length === 0) return;
+    setSearchMatchIndex(prev => (prev + 1) % matchingMessages.length);
+  };
+
+  const handlePrevMatch = () => {
+    if (matchingMessages.length === 0) return;
+    setSearchMatchIndex(prev => (prev - 1 + matchingMessages.length) % matchingMessages.length);
+  };
+
+  useEffect(() => {
+    if (isSearching) {
+      if (matchingMessages.length > 0) {
+        setSearchMatchIndex(0);
+      } else {
+        setSearchMatchIndex(-1);
+      }
+    }
+  }, [searchQuery, selectedDate, isImageFilter, isSearching, matchingMessages.length]);
 
   return (
     <div className="flex h-screen bg-background text-foreground overflow-hidden relative">
@@ -587,7 +614,10 @@ export default function App() {
       {/* Main Content */}
       <main className="flex-1 flex flex-col relative w-full">
         {/* Header */}
-        <header className="px-8 py-6 flex items-center justify-between border-b relative">
+        <header className={cn(
+          "px-8 py-6 flex items-center justify-between border-b relative transition-all duration-300",
+          isSearching && "py-8 min-h-[110px]"
+        )}>
           <div className={cn("flex items-center gap-4 z-10", isSearching && "hidden")}>
             <Button
               variant="ghost"
@@ -608,67 +638,109 @@ export default function App() {
                     initial={{ opacity: 0, y: -10 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: 10 }}
-                    className="pointer-events-auto w-64 sm:w-80 flex items-center gap-2"
+                    className="pointer-events-auto w-72 sm:w-[480px] flex items-center gap-2"
                   >
-                    <div className="relative flex-1 flex items-center gap-2">
-                      <div className="relative flex-1">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
-                        <Input
-                          value={searchQuery}
-                          onChange={(e) => setSearchQuery(e.target.value)}
-                          placeholder="搜索聊天内容..."
-                          className="pl-9 h-9 rounded-full bg-muted/50 border-muted-foreground/20 focus-visible:ring-primary/20"
-                          autoFocus
-                        />
-                        {searchQuery && (
-                          <button 
-                            onClick={() => setSearchQuery('')}
-                            className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground pointer-events-auto"
+                    <div className="relative flex-1 flex flex-col items-center gap-2">
+                      <div className="flex items-center gap-2 w-full">
+                        <div className="relative flex-1">
+                          <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
+                          <Input
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                            placeholder="搜索聊天内容..."
+                            className="pl-9 h-9 rounded-full bg-muted/50 border-muted-foreground/20 focus-visible:ring-primary/20"
+                            autoFocus
+                          />
+                          {searchQuery && (
+                            <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-2 pointer-events-auto">
+                              <span className="text-[10px] text-muted-foreground font-mono">
+                                {matchingMessages.length > 0 ? `${searchMatchIndex + 1}/${matchingMessages.length}` : '0/0'}
+                              </span>
+                              <button 
+                                onClick={() => setSearchQuery('')}
+                                className="text-muted-foreground hover:text-foreground"
+                              >
+                                <span className="text-xs">×</span>
+                              </button>
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-1">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="w-8 h-8 rounded-full bg-muted border border-muted-foreground/10"
+                            onClick={handlePrevMatch}
+                            disabled={matchingMessages.length === 0}
                           >
-                            <span className="text-xs">×</span>
-                          </button>
-                        )}
+                            <ChevronUp size={14} />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="w-8 h-8 rounded-full bg-muted border border-muted-foreground/10"
+                            onClick={handleNextMatch}
+                            disabled={matchingMessages.length === 0}
+                          >
+                            <ChevronDown size={14} />
+                          </Button>
+                        </div>
                       </div>
 
-                      <div className="relative group/date">
+                      <div className="flex items-center gap-2 w-full justify-center">
+                        <div className="relative group/date">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className={cn(
+                              "rounded-full w-8 h-8 bg-muted border border-muted-foreground/20 text-muted-foreground shrink-0 transition-all",
+                              selectedDate && "text-primary border-primary/40 bg-primary/5"
+                            )}
+                          >
+                            <Calendar size={14} />
+                            <input 
+                              type="date"
+                              value={selectedDate}
+                              onChange={(e) => setSelectedDate(e.target.value)}
+                              className="absolute inset-0 opacity-0 cursor-pointer"
+                            />
+                          </Button>
+                          {selectedDate && (
+                            <button 
+                              onClick={() => setSelectedDate('')}
+                              className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-destructive text-destructive-foreground rounded-full flex items-center justify-center text-[10px] shadow-sm active:scale-95 transition-transform"
+                            >
+                              <X size={8} strokeWidth={3} />
+                            </button>
+                          )}
+                        </div>
+
                         <Button
                           variant="ghost"
                           size="icon"
                           className={cn(
-                            "rounded-full w-9 h-9 bg-muted border border-muted-foreground/20 text-muted-foreground shrink-0 transition-all",
-                            selectedDate && "text-primary border-primary/40 bg-primary/5"
+                            "rounded-full w-8 h-8 bg-muted border border-muted-foreground/20 text-muted-foreground shrink-0 transition-all",
+                            isImageFilter && "text-primary border-primary/40 bg-primary/5"
                           )}
+                          onClick={() => setIsImageFilter(!isImageFilter)}
+                          title="只显示图片"
                         >
-                          <Calendar size={16} />
-                          <input 
-                            type="date"
-                            value={selectedDate}
-                            onChange={(e) => setSelectedDate(e.target.value)}
-                            className="absolute inset-0 opacity-0 cursor-pointer"
-                          />
+                          <Image size={14} />
                         </Button>
-                        {selectedDate && (
-                          <button 
-                            onClick={() => setSelectedDate('')}
-                            className="absolute -top-1 -right-1 w-4 h-4 bg-destructive text-destructive-foreground rounded-full flex items-center justify-center text-[10px] shadow-sm active:scale-95 transition-transform"
-                          >
-                            <X size={10} strokeWidth={3} />
-                          </button>
-                        )}
-                      </div>
 
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className={cn(
-                          "rounded-full w-9 h-9 bg-muted border border-muted-foreground/20 text-muted-foreground shrink-0 transition-all",
-                          isImageFilter && "text-primary border-primary/40 bg-primary/5"
-                        )}
-                        onClick={() => setIsImageFilter(!isImageFilter)}
-                        title="只显示图片"
-                      >
-                        <Image size={16} />
-                      </Button>
+                        <Button
+                          variant="ghost"
+                          className={cn(
+                            "h-8 px-3 rounded-full bg-muted border border-muted-foreground/20 text-[10px] font-medium transition-all gap-1.5",
+                            !hideNonMatches && "text-primary border-primary/40 bg-primary/5"
+                          )}
+                          onClick={() => setHideNonMatches(!hideNonMatches)}
+                        >
+                          {hideNonMatches ? <EyeOff size={10} /> : <Eye size={10} />}
+                          {hideNonMatches ? "隐藏无关" : "显示全部"}
+                        </Button>
+                      </div>
                     </div>
                     <Button
                       variant="ghost"
@@ -679,6 +751,8 @@ export default function App() {
                         setSearchQuery('');
                         setSelectedDate('');
                         setIsImageFilter(false);
+                        setHideNonMatches(true);
+                        setSearchMatchIndex(-1);
                       }}
                     >
                       <X size={16} />
@@ -727,6 +801,8 @@ export default function App() {
             settings={state.settings}
             isSelectionMode={isSelectionMode}
             isSearching={isSearching}
+            searchQuery={searchQuery}
+            activeSearchMatchId={searchMatchIndex >= 0 ? matchingMessages[searchMatchIndex]?.id : undefined}
             selectedIds={selectedMessageIds}
             onToggleSelection={handleToggleMessageSelection}
             onEnterSelectionMode={handleEnterSelectionMode}
