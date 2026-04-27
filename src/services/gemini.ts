@@ -35,18 +35,39 @@ export async function sendMessageToGemini(
         ? [{ role: 'system', content: settings.systemInstruction }] 
         : [{ role: 'system', content: `你是 ${settings.aiName}，一个乐于助人的 AI 助手。请用中文回答。保持回答简洁并适合移动端阅读。使用 markdown 格式。` }];
 
+      const mapMessageToCustomContent = (msg: Message) => {
+        const parts: any[] = [];
+        let text = msg.content;
+        if (msg.quote) {
+          text = `引用消息 [${msg.quote.userName}]: "${msg.quote.content}"\n\n回复上面的消息: ${text}`;
+        }
+        
+        if (text) {
+          parts.push({ type: 'text', text });
+        }
+
+        if (msg.type === 'image' && msg.mediaUrl) {
+          parts.push({
+            type: 'image_url',
+            image_url: {
+              url: msg.mediaUrl
+            }
+          });
+        }
+        
+        // Voice is tricky for OpenAI format, usually handled as audio uploads or separate fields.
+        // For now, we'll focus on image recognition as requested.
+        
+        return parts.length === 1 && parts[0].type === 'text' ? parts[0].text : parts;
+      };
+
       const history = messages.slice(0, -1).map(msg => ({
         role: msg.role === 'assistant' ? 'assistant' : 'user',
-        content: msg.content
+        content: mapMessageToCustomContent(msg)
       }));
 
       const lastMessage = messages[messages.length - 1];
-      let userPrompt = lastMessage.content;
-
-      // Inject quote context for custom endpoint if exists
-      if (lastMessage.quote) {
-        userPrompt = `引用消息 [${lastMessage.quote.userName}]: "${lastMessage.quote.content}"\n\n回复上面的消息: ${userPrompt}`;
-      }
+      const userContent = mapMessageToCustomContent(lastMessage);
 
       // Use CapacitorHttp for better compatibility and to bypass CORS on mobile
       const options = {
@@ -61,7 +82,7 @@ export async function sendMessageToGemini(
           messages: [
             ...systemMessage,
             ...history,
-            { role: 'user', content: userPrompt }
+            { role: 'user', content: userContent }
           ],
           stream: false,
         },
@@ -93,31 +114,44 @@ export async function sendMessageToGemini(
     const modelName = settings.modelName || "gemini-3-flash-preview";
     const systemInstruction = settings.systemInstruction || `你是 ${settings.aiName}，一个乐于助人的 AI 助手。请用中文回答。保持回答简洁并适合移动端阅读。使用 markdown 格式。`;
 
+    // Helper to map message to Gemini parts
+    const mapMessageToParts = (msg: Message) => {
+      const msgParts: any[] = [];
+      let finalContent = msg.content;
+
+      // Handle quotes
+      if (msg.quote) {
+        finalContent = `引用消息 [${msg.quote.userName}]: "${msg.quote.content}"\n\n回复上面的消息: ${finalContent}`;
+      }
+
+      if (finalContent || msg.type === 'text') {
+        msgParts.push({ text: finalContent });
+      }
+
+      if ((msg.type === 'image' || msg.type === 'voice') && msg.mediaUrl) {
+        try {
+          const base64Data = msg.mediaUrl.split(',')[1];
+          const mimeType = msg.mediaUrl.split(';')[0].split(':')[1];
+          msgParts.push({
+            inlineData: {
+              data: base64Data,
+              mimeType: mimeType
+            }
+          });
+        } catch (e) {
+          console.error("Error parsing media URL:", e);
+        }
+      }
+      return msgParts;
+    };
+
     const history = messages.slice(0, -1).map(msg => ({
       role: msg.role === 'assistant' ? 'model' : 'user',
-      parts: [{ text: msg.content }]
+      parts: mapMessageToParts(msg)
     }));
 
     const lastMessage = messages[messages.length - 1];
-    let userPrompt = lastMessage.content;
-    
-    // Inject quote context if exists
-    if (lastMessage.quote) {
-      userPrompt = `引用消息 [${lastMessage.quote.userName}]: "${lastMessage.quote.content}"\n\n回复上面的消息: ${userPrompt}`;
-    }
-
-    const parts: any[] = [{ text: userPrompt }];
-
-    if ((lastMessage.type === 'image' || lastMessage.type === 'voice') && lastMessage.mediaUrl) {
-      const base64Data = lastMessage.mediaUrl.split(',')[1];
-      const mimeType = lastMessage.mediaUrl.split(';')[0].split(':')[1];
-      parts.push({
-        inlineData: {
-          data: base64Data,
-          mimeType: mimeType
-        }
-      });
-    }
+    const parts = mapMessageToParts(lastMessage);
 
     const responseStream = await ai.models.generateContentStream({
       model: modelName,

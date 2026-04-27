@@ -7,5 +7,5 @@ coverage/
 .env*
 !.env.example
 android/key.properties
-android/app/*.jks
-android/app/*.keystore
+# android/app/*.jks
+# android/app/*.keystore
