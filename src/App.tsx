@@ -38,6 +38,11 @@ const DEFAULT_SETTINGS: AppSettings = {
   githubOwner: 'LX00924-LX',
   githubRepo: 'ai-lmstudio',
   welcomeMessage: '你好！我是 Aether-X。欢迎回来！有什么我可以帮你的吗？',
+  showSplashScreen: true,
+  splashText: 'Aether-X',
+  splashImage: '',
+  splashSubtitle: 'Loading AI Experience',
+  splashDuration: 2000,
 };
 
 export default function App() {
@@ -53,6 +58,48 @@ export default function App() {
   const [searchMatchIndex, setSearchMatchIndex] = useState(-1);
   const [hideNonMatches, setHideNonMatches] = useState(true);
   const [isSearching, setIsSearching] = useState(false);
+  const [showSplash, setShowSplash] = useState(true);
+
+  const [state, setState] = useState<ChatState>(() => {
+    let settings = DEFAULT_SETTINGS;
+    let messages: Message[] = [];
+    
+    try {
+      const savedSettings = localStorage.getItem('gemini_settings');
+      if (savedSettings) {
+        settings = { ...DEFAULT_SETTINGS, ...JSON.parse(savedSettings) };
+      }
+      
+      const savedMessages = localStorage.getItem('chat_history');
+      if (savedMessages) {
+        messages = JSON.parse(savedMessages).map((m: any) => ({
+          ...m,
+          timestamp: new Date(m.timestamp)
+        }));
+      }
+    } catch (error) {
+      console.error('Failed to parse saved data', error);
+    }
+    
+    if (messages.length === 0 && settings.welcomeMessage && settings.welcomeMessage.trim() !== '') {
+      const sessionWelcome: Message = {
+        id: crypto.randomUUID(),
+        role: 'assistant',
+        content: settings.welcomeMessage,
+        timestamp: new Date(),
+        type: 'text'
+      };
+      messages = [...messages, sessionWelcome];
+    }
+    
+    return {
+      messages,
+      isLoading: false,
+      error: null,
+      settings
+    };
+  });
+
   const [quotedMessage, setQuotedMessage] = useState<Message | null>(null);
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
     const savedTheme = localStorage.getItem('app_theme');
@@ -96,6 +143,17 @@ export default function App() {
     };
   }, []);
 
+  useEffect(() => {
+    if (state.settings.showSplashScreen && showSplash) {
+      const timer = setTimeout(() => {
+        setShowSplash(false);
+      }, state.settings.splashDuration || 2000);
+      return () => clearTimeout(timer);
+    } else {
+      setShowSplash(false);
+    }
+  }, [state.settings.showSplashScreen, state.settings.splashDuration, showSplash]);
+
   // Notification implementation
   useEffect(() => {
     if ('Notification' in window && Notification.permission !== 'granted') {
@@ -103,46 +161,6 @@ export default function App() {
     }
   }, []);
 
-  const [state, setState] = useState<ChatState>(() => {
-    let settings = DEFAULT_SETTINGS;
-    let messages: Message[] = [];
-    
-    try {
-      const savedSettings = localStorage.getItem('gemini_settings');
-      if (savedSettings) {
-        settings = { ...DEFAULT_SETTINGS, ...JSON.parse(savedSettings) };
-      }
-      
-      const savedMessages = localStorage.getItem('chat_history');
-      if (savedMessages) {
-        messages = JSON.parse(savedMessages).map((m: any) => ({
-          ...m,
-          timestamp: new Date(m.timestamp)
-        }));
-      }
-    } catch (error) {
-      console.error('Failed to parse saved data', error);
-    }
-    
-    // Add a fresh welcome message for the new session ONLY if history is empty
-    if (messages.length === 0 && settings.welcomeMessage && settings.welcomeMessage.trim() !== '') {
-      const sessionWelcome: Message = {
-        id: crypto.randomUUID(),
-        role: 'assistant',
-        content: settings.welcomeMessage,
-        timestamp: new Date(),
-        type: 'text'
-      };
-      messages = [...messages, sessionWelcome];
-    }
-    
-    return {
-      messages,
-      isLoading: false,
-      error: null,
-      settings
-    };
-  });
 
   useEffect(() => {
     localStorage.setItem('chat_history', JSON.stringify(state.messages));
@@ -290,12 +308,13 @@ export default function App() {
         document.body.removeChild(link);
         setTimeout(() => URL.revokeObjectURL(url), 100);
       } else {
-        // Save to Documents directory on mobile for better accessibility
+        // Save to Download directory on mobile for better accessibility
         await Filesystem.writeFile({
-          path: fileName,
+          path: `Download/${fileName}`,
           data: data,
-          directory: Directory.Documents,
+          directory: Directory.ExternalStorage,
           encoding: Encoding.UTF8,
+          recursive: true,
         });
       }
       
@@ -308,16 +327,58 @@ export default function App() {
   };
 
   const handleImportChat = async () => {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = '.json';
-    input.onchange = async (e: any) => {
-      const file = e.target.files[0];
-      if (file) {
-        const reader = new FileReader();
-        reader.onload = async (event) => {
+    const isWeb = !window.hasOwnProperty('Capacitor') || (window as any).Capacitor?.getPlatform() === 'web';
+
+    if (isWeb) {
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = '.json';
+      input.onchange = async (e: any) => {
+        const file = e.target.files[0];
+        if (file) {
+          const reader = new FileReader();
+          reader.onload = async (event) => {
+            try {
+              const content = event.target?.result as string;
+              const importedData = JSON.parse(content);
+              
+              if (Array.isArray(importedData)) {
+                const formattedMessages = importedData.map((m: any) => ({
+                  ...m,
+                  timestamp: new Date(m.timestamp)
+                }));
+
+                setState(prev => ({ ...prev, messages: formattedMessages }));
+                await Toast.show({ text: '聊天记录已覆盖恢复' });
+                setIsSidebarOpen(false);
+              }
+            } catch (error) {
+              console.error('Import failed', error);
+              await Toast.show({ text: '导入失败：文件格式不合法' });
+            }
+          };
+          reader.readAsText(file);
+        }
+      };
+      input.click();
+    } else {
+      try {
+        const { FilePicker } = await import('@capawesome/capacitor-file-picker');
+        const result = await FilePicker.pickFiles({
+          types: ['application/json'],
+          limit: 1,
+          readData: true
+        });
+
+        if (result.files && result.files.length > 0 && result.files[0].data) {
           try {
-            const content = event.target?.result as string;
+            const base64 = result.files[0].data;
+            const binaryString = window.atob(base64);
+            const bytes = new Uint8Array(binaryString.length);
+            for (let i = 0; i < binaryString.length; i++) {
+              bytes[i] = binaryString.charCodeAt(i);
+            }
+            const content = new TextDecoder().decode(bytes);
             const importedData = JSON.parse(content);
             
             if (Array.isArray(importedData)) {
@@ -331,14 +392,15 @@ export default function App() {
               setIsSidebarOpen(false);
             }
           } catch (error) {
-            console.error('Import failed', error);
-            await Toast.show({ text: '导入失败：文件格式不合法' });
+            console.error('Import parse failed', error);
+            await Toast.show({ text: '文件解析失败' });
           }
-        };
-        reader.readAsText(file);
+        }
+      } catch (error) {
+        console.error('Import failed', error);
+        await Toast.show({ text: '导入失败' });
       }
-    };
-    input.click();
+    }
   };
 
   const handleQuote = (message: Message) => {
@@ -505,8 +567,8 @@ export default function App() {
       // 1. Download the file
       const downloadResult = await Filesystem.downloadFile({
         url: url,
-        path: fileName,
-        directory: Directory.Documents,
+        path: `Download/${fileName}`,
+        directory: Directory.ExternalStorage,
       });
 
       if (downloadResult.path) {
@@ -556,8 +618,52 @@ export default function App() {
     }
   }, [searchQuery, selectedDate, isImageFilter, isSearching, matchingMessages.length]);
 
+  const SplashScreen = () => (
+    <motion.div
+      initial={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-white dark:bg-[#0a0a0b]"
+    >
+      <motion.div
+        initial={{ scale: 0.8, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        transition={{ duration: 0.5 }}
+        className="flex flex-col items-center gap-6"
+      >
+        {state.settings.splashImage ? (
+          <img 
+            src={state.settings.splashImage} 
+            alt="Splash" 
+            className="w-24 h-24 rounded-2xl object-cover shadow-xl border border-border/50"
+          />
+        ) : (
+          <div className="w-24 h-24 rounded-2xl bg-primary flex items-center justify-center shadow-xl shadow-primary/20">
+            <Sparkles size={48} className="text-primary-foreground" />
+          </div>
+        )}
+        <div className="flex flex-col items-center gap-2 text-center">
+          <h1 className="text-3xl font-bold tracking-tight text-foreground">
+            {state.settings.splashText || state.settings.aiName}
+          </h1>
+          <p className="text-sm text-muted-foreground font-medium uppercase tracking-[0.2em] opacity-60">
+            {state.settings.aiSubtitle}
+          </p>
+        </div>
+      </motion.div>
+      <div className="absolute bottom-12 flex flex-col items-center gap-2">
+        <div className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
+        <span className="text-[10px] font-mono text-muted-foreground uppercase tracking-widest opacity-40">
+          {state.settings.splashSubtitle || 'Loading AI Experience'}
+        </span>
+      </div>
+    </motion.div>
+  );
+
   return (
     <div className="flex h-screen bg-background text-foreground overflow-hidden relative">
+      <AnimatePresence mode="wait">
+        {showSplash && state.settings.showSplashScreen && <SplashScreen key="splash" />}
+      </AnimatePresence>
       {/* Sidebar Overlay Backdrop */}
       <AnimatePresence>
         {isSidebarOpen && (
@@ -586,7 +692,7 @@ export default function App() {
                 variant="ghost" 
                 size="icon" 
                 className={cn(
-                  "w-11 h-11 rounded-xl bg-muted border transition-colors",
+                  "w-11 h-11 rounded-xl bg-muted border transition-all hover:bg-primary/10 hover:text-primary active:scale-95",
                   isSearching ? "text-primary border-primary/50" : "text-muted-foreground"
                 )}
                 onClick={() => {
@@ -599,7 +705,7 @@ export default function App() {
               <Button 
                 variant="ghost" 
                 size="icon" 
-                className="w-11 h-11 rounded-xl bg-muted border text-muted-foreground hover:text-primary hover:border-primary/50 transition-colors"
+                className="w-11 h-11 rounded-xl bg-muted border text-muted-foreground transition-all hover:bg-primary/10 hover:text-primary active:scale-95"
                 onClick={handleExportChat}
                 title="导出记录"
               >
@@ -608,7 +714,7 @@ export default function App() {
               <Button 
                 variant="ghost" 
                 size="icon" 
-                className="w-11 h-11 rounded-xl bg-muted border text-muted-foreground hover:text-primary hover:border-primary/50 transition-colors"
+                className="w-11 h-11 rounded-xl bg-muted border text-muted-foreground transition-all hover:bg-primary/10 hover:text-primary active:scale-95"
                 onClick={handleImportChat}
                 title="导入记录"
               >
@@ -617,7 +723,7 @@ export default function App() {
               <Button 
                 variant="ghost" 
                 size="icon" 
-                className="w-11 h-11 rounded-xl bg-muted border text-muted-foreground hover:text-destructive hover:border-destructive/50 transition-colors"
+                className="w-11 h-11 rounded-xl bg-muted border text-muted-foreground transition-all hover:bg-primary/10 hover:text-primary active:scale-95"
                 onClick={clearChat}
               >
                 <Trash2 size={20} />
@@ -628,7 +734,7 @@ export default function App() {
               <Button 
                 variant="ghost" 
                 size="icon" 
-                className="w-11 h-11 rounded-xl bg-muted border text-muted-foreground"
+                className="w-11 h-11 rounded-xl bg-muted border text-muted-foreground transition-all hover:bg-primary/10 hover:text-primary active:scale-95"
                 onClick={toggleTheme}
               >
                 {theme === 'dark' ? <Sun size={20} /> : <Moon size={20} />}
@@ -636,7 +742,7 @@ export default function App() {
               <Button 
                 variant="ghost" 
                 size="icon" 
-                className="w-11 h-11 rounded-xl bg-muted border text-muted-foreground"
+                className="w-11 h-11 rounded-xl bg-muted border text-muted-foreground transition-all hover:bg-primary/10 hover:text-primary active:scale-95"
                 onClick={() => setIsSettingsOpen(true)}
               >
                 <Settings size={20} />
@@ -657,7 +763,7 @@ export default function App() {
             <Button
               variant="ghost"
               size="icon"
-              className="rounded-full w-11 h-11 bg-muted border text-muted-foreground transition-colors"
+              className="rounded-full w-11 h-11 bg-muted border text-muted-foreground transition-all hover:bg-primary/10 hover:text-primary active:scale-95"
               onClick={() => setIsSidebarOpen(!isSidebarOpen)}
             >
               <PanelLeft size={20} />
@@ -693,7 +799,7 @@ export default function App() {
                               </span>
                               <button 
                                 onClick={() => setSearchQuery('')}
-                                className="text-muted-foreground hover:text-foreground"
+                                className="text-muted-foreground hover:text-primary transition-colors active:scale-90"
                               >
                                 <span className="text-xs">×</span>
                               </button>
@@ -705,7 +811,7 @@ export default function App() {
                           <Button
                             variant="ghost"
                             size="icon"
-                            className="w-8 h-8 rounded-full bg-muted border border-muted-foreground/10"
+                            className="w-8 h-8 rounded-full bg-muted border border-muted-foreground/10 transition-all hover:bg-primary/10 hover:text-primary active:scale-95"
                             onClick={handlePrevMatch}
                             disabled={matchingMessages.length === 0}
                           >
@@ -714,7 +820,7 @@ export default function App() {
                           <Button
                             variant="ghost"
                             size="icon"
-                            className="w-8 h-8 rounded-full bg-muted border border-muted-foreground/10"
+                            className="w-8 h-8 rounded-full bg-muted border border-muted-foreground/10 transition-all hover:bg-primary/10 hover:text-primary active:scale-95"
                             onClick={handleNextMatch}
                             disabled={matchingMessages.length === 0}
                           >
@@ -729,8 +835,8 @@ export default function App() {
                             variant="ghost"
                             size="icon"
                             className={cn(
-                              "relative overflow-hidden rounded-full w-8 h-8 bg-muted border border-muted-foreground/20 text-muted-foreground shrink-0 transition-all",
-                              selectedDate && "text-primary border-primary/40 bg-primary/5"
+                              "relative overflow-hidden rounded-full w-8 h-8 bg-muted border border-muted-foreground/20 text-muted-foreground shrink-0 transition-all hover:bg-primary/10 hover:text-primary active:scale-95",
+                              selectedDate && "text-primary border-primary/40 bg-primary/5 hover:bg-primary/15"
                             )}
                           >
                             <Calendar size={14} />
@@ -756,8 +862,8 @@ export default function App() {
                           variant="ghost"
                           size="icon"
                           className={cn(
-                            "rounded-full w-8 h-8 bg-muted border border-muted-foreground/20 text-muted-foreground shrink-0 transition-all",
-                            isImageFilter && "text-primary border-primary/40 bg-primary/5"
+                            "rounded-full w-8 h-8 bg-muted border border-muted-foreground/20 text-muted-foreground shrink-0 transition-all hover:bg-primary/10 hover:text-primary active:scale-95",
+                            isImageFilter && "text-primary border-primary/40 bg-primary/5 hover:bg-primary/15"
                           )}
                           onClick={() => setIsImageFilter(!isImageFilter)}
                           title="只显示图片"
@@ -768,8 +874,8 @@ export default function App() {
                         <Button
                           variant="ghost"
                           className={cn(
-                            "h-8 px-3 rounded-full bg-muted border border-muted-foreground/20 text-[10px] font-medium transition-all gap-1.5",
-                            !hideNonMatches && "text-primary border-primary/40 bg-primary/5"
+                            "h-8 px-3 rounded-full bg-muted border border-muted-foreground/20 text-[10px] font-medium transition-all gap-1.5 hover:bg-primary/10 hover:text-primary active:scale-95",
+                            !hideNonMatches && "text-primary border-primary/40 bg-primary/5 hover:bg-primary/15"
                           )}
                           onClick={() => setHideNonMatches(!hideNonMatches)}
                         >
@@ -781,7 +887,7 @@ export default function App() {
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="rounded-full w-9 h-9 bg-muted border text-muted-foreground shrink-0"
+                      className="rounded-full w-9 h-9 bg-muted border text-muted-foreground shrink-0 transition-all hover:bg-primary/10 hover:text-primary active:scale-95"
                       onClick={() => {
                         setIsSearching(false);
                         setSearchQuery('');

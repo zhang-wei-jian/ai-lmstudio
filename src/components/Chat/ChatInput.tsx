@@ -24,6 +24,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage, quotedMessa
   const [text, setText] = useState('');
   const [previewImage, setPreviewImage] = useState<string | null>(null);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const longPressTimer = useRef<NodeJS.Timeout | null>(null);
@@ -170,8 +171,26 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage, quotedMessa
     }
   };
 
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+        setIsMenuOpen(false);
+      }
+    };
+
+    if (isMenuOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    } else {
+      document.removeEventListener('mousedown', handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isMenuOpen]);
+
   return (
-    <div className="w-full">
+    <div className="w-full" ref={containerRef}>
       <div className="max-w-2xl mx-auto space-y-4">
         <AnimatePresence>
           {previewImage && (
@@ -311,7 +330,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage, quotedMessa
               variant="ghost"
               size="icon"
               className={cn(
-                "w-11 h-11 rounded-full transition-colors bg-card border mr-1",
+                "w-11 h-11 rounded-full transition-all hover:bg-primary/10 hover:text-primary active:scale-95 bg-card border mr-1",
                 isRecording ? "text-primary border-primary/50" : "text-muted-foreground"
               )}
               onPointerDown={handleMicDown}
@@ -344,7 +363,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage, quotedMessa
               "shrink-0 w-12 h-12 rounded-full transition-all duration-300 active:scale-95",
               (text.trim() || previewImage || audioUrl)
                 ? "bg-primary text-primary-foreground shadow-[0_0_15px_rgba(0,210,255,0.4)]"
-                : "bg-muted text-muted-foreground hover:bg-muted/80 shadow-none rotate-0"
+                : "bg-muted text-muted-foreground hover:bg-primary/10 hover:text-primary shadow-none rotate-0"
             )}
           >
             <AnimatePresence mode="wait">
