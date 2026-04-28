@@ -284,7 +284,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
                 <Button 
                   variant="outline" 
                   size="sm" 
-                  className="h-8 text-xs px-3"
+                  className="h-8 text-xs px-3 transition-all hover:bg-primary/10 hover:text-primary active:scale-95"
                   onClick={handleInnerCheckUpdate}
                   disabled={isChecking}
                 >
@@ -295,7 +295,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
           </div>
         </div>
         <DialogFooter>
-          <Button onClick={handleSave} className="w-full">保存更改</Button>
+          <Button onClick={handleSave} className="w-full transition-all hover:bg-primary/90 active:scale-95">保存更改</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
