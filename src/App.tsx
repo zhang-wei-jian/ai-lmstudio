@@ -37,7 +37,6 @@ const DEFAULT_SETTINGS: AppSettings = {
   modelName: '',
   githubOwner: 'LX00924-LX',
   githubRepo: 'ai-lmstudio',
-  welcomeMessage: '你好！我是 Aether-X。欢迎回来！有什么我可以帮你的吗？',
   showSplashScreen: true,
   splashText: 'Aether-X',
   splashImage: '',
@@ -79,17 +78,6 @@ export default function App() {
       }
     } catch (error) {
       console.error('Failed to parse saved data', error);
-    }
-    
-    if (messages.length === 0 && settings.welcomeMessage && settings.welcomeMessage.trim() !== '') {
-      const sessionWelcome: Message = {
-        id: crypto.randomUUID(),
-        role: 'assistant',
-        content: settings.welcomeMessage,
-        timestamp: new Date(),
-        type: 'text'
-      };
-      messages = [...messages, sessionWelcome];
     }
     
     return {

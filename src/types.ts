@@ -31,7 +31,6 @@ export interface AppSettings {
   apiEndpoint: string;
   modelName: string;
   customBackground?: string;
-  welcomeMessage?: string;
   systemInstruction?: string;
   githubOwner?: string;
   githubRepo?: string;
