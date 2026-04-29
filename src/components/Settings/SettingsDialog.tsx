@@ -51,19 +51,6 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
     setLocalSettings(settings);
   }, [settings, open]);
 
-  const handleInnerCheckUpdate = async () => {
-    setIsChecking(true);
-    setUpdateStatus(null);
-    const result = await onCheckUpdate();
-    setIsChecking(false);
-    
-    if (!result.success) {
-      setUpdateStatus({ type: 'error', message: result.error || '检测失败' });
-    } else if (result.data === 'latest') {
-      setUpdateStatus({ type: 'success', message: '当前已是最新版本' });
-    }
-  };
-
   const fetchModels = async (endpoint: string) => {
     if (!endpoint.trim()) return;
     
@@ -123,6 +110,20 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
     } finally {
       setIsFetchingModels(false);
     }
+  };
+
+  const handleInnerCheckUpdate = async () => {
+    setIsChecking(true);
+    setUpdateStatus(null);
+    const result = await onCheckUpdate();
+    setIsChecking(false);
+    
+    if (!result.success) {
+      setUpdateStatus({ type: 'error', message: result.error || '检测失败' });
+    } else if (result.data === 'latest') {
+      setUpdateStatus({ type: 'success', message: '当前已是最新版本' });
+    }
+    // If it's a new version, App.tsx handles the UpdateDialog
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
