@@ -35,6 +35,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   apiKey: '',
   apiEndpoint: '',
   modelName: '',
+  availableModels: [],
   githubOwner: 'LX00924-LX',
   githubRepo: 'ai-lmstudio',
   showSplashScreen: true,
