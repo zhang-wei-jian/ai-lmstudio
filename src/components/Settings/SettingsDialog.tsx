@@ -15,8 +15,9 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { AppSettings } from '../../types';
-import { ImagePlus, X, Camera, Image as ImageIcon } from 'lucide-react';
+import { ImagePlus, X, Camera, Image as ImageIcon, ChevronDown, Loader2 } from 'lucide-react';
 import { Camera as CapCamera, CameraResultType, CameraSource } from '@capacitor/camera';
+import { CapacitorHttp } from '@capacitor/core';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../../lib/utils';
 
@@ -38,11 +39,14 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
   const [localSettings, setLocalSettings] = React.useState<AppSettings>(settings);
   const [updateStatus, setUpdateStatus] = React.useState<{ type: 'error' | 'success', message: string } | null>(null);
   const [isChecking, setIsChecking] = React.useState(false);
+  const [isFetchingModels, setIsFetchingModels] = React.useState(false);
+  const [modelFetchStatus, setModelFetchStatus] = React.useState<{ type: 'error' | 'success', message: string } | null>(null);
 
   React.useEffect(() => {
     if (!open) {
       setUpdateStatus(null);
       setIsChecking(false);
+      setModelFetchStatus(null);
     }
     setLocalSettings(settings);
   }, [settings, open]);
@@ -58,7 +62,67 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
     } else if (result.data === 'latest') {
       setUpdateStatus({ type: 'success', message: '当前已是最新版本' });
     }
-    // If it's a new version, App.tsx handles the UpdateDialog
+  };
+
+  const fetchModels = async (endpoint: string) => {
+    if (!endpoint.trim()) return;
+    
+    let sanitized = endpoint.trim();
+    if (!sanitized.startsWith('http')) {
+      sanitized = `http://${sanitized}`;
+    }
+    if (!sanitized.endsWith('/v1') && !sanitized.endsWith('/v1/')) {
+      sanitized = `${sanitized.replace(/\/$/, '')}/v1`;
+    }
+
+    setIsFetchingModels(true);
+    setModelFetchStatus(null);
+
+    try {
+      const options = {
+        url: `${sanitized}/models`,
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${localSettings.apiKey || 'lm-studio'}`,
+          'Content-Type': 'application/json',
+        },
+        connectTimeout: 10000,
+        readTimeout: 10000,
+      };
+
+      const response = await CapacitorHttp.request(options);
+
+      if (response.status >= 200 && response.status < 300) {
+        const data = response.data;
+        let models: string[] = [];
+
+        if (data && Array.isArray(data.data)) {
+          models = data.data.map((m: any) => m.id || m.name).filter(Boolean);
+        } else if (Array.isArray(data)) {
+          models = data.map((m: any) => m.id || m.name || m).filter(Boolean);
+        }
+
+        if (models.length > 0) {
+          models.sort((a, b) => a.localeCompare(b));
+          const defaultModel = models[0];
+          setLocalSettings(prev => ({
+            ...prev,
+            availableModels: models,
+            modelName: prev.modelName && models.includes(prev.modelName) ? prev.modelName : defaultModel,
+          }));
+          setModelFetchStatus({ type: 'success', message: `发现 ${models.length} 个模型` });
+        } else {
+          setModelFetchStatus({ type: 'error', message: '未发现可用模型' });
+        }
+      } else {
+        setModelFetchStatus({ type: 'error', message: `请求失败: HTTP ${response.status}` });
+      }
+    } catch (error) {
+      console.error('Fetch models error:', error);
+      setModelFetchStatus({ type: 'error', message: '连接失败，请检查地址是否正确' });
+    } finally {
+      setIsFetchingModels(false);
+    }
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -177,12 +241,62 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
           </div>
           <div className="grid grid-cols-4 items-center gap-4">
             <Label htmlFor="modelName" className="text-right text-xs">模型名称</Label>
-            <Input id="modelName" name="modelName" value={localSettings.modelName} onChange={handleChange} className="col-span-3 h-8 text-xs" />
+            <div className="col-span-3 relative">
+              {localSettings.availableModels && localSettings.availableModels.length > 0 ? (
+                <div className="relative">
+                  <select
+                    id="modelName"
+                    value={localSettings.modelName}
+                    onChange={(e) => setLocalSettings(prev => ({ ...prev, modelName: e.target.value }))}
+                    className="w-full h-8 text-xs rounded-md border border-input bg-background px-3 pr-8 appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                  >
+                    {localSettings.availableModels.map(model => (
+                      <option key={model} value={model}>{model}</option>
+                    ))}
+                  </select>
+                  <ChevronDown size={14} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+                </div>
+              ) : (
+                <Input 
+                  id="modelName" 
+                  name="modelName" 
+                  value={localSettings.modelName} 
+                  onChange={handleChange} 
+                  className="h-8 text-xs" 
+                  placeholder="先填写 API 地址，自动获取模型列表" 
+                />
+              )}
+            </div>
           </div>
           <div className="grid grid-cols-4 items-center gap-4">
             <Label htmlFor="apiEndpoint" className="text-right text-xs">API 终端</Label>
-            <Input id="apiEndpoint" name="apiEndpoint" value={localSettings.apiEndpoint} onChange={handleChange} className="col-span-3 h-8 text-xs" />
+            <div className="col-span-3 flex items-center gap-2">
+              <Input 
+                id="apiEndpoint" 
+                name="apiEndpoint" 
+                value={localSettings.apiEndpoint} 
+                onChange={handleChange}
+                onBlur={() => fetchModels(localSettings.apiEndpoint)}
+                className="h-8 text-xs flex-1" 
+                placeholder="例如：http://localhost:1234" 
+              />
+              {isFetchingModels && <Loader2 size={14} className="animate-spin text-muted-foreground shrink-0" />}
+            </div>
           </div>
+
+          {modelFetchStatus && (
+            <div className="grid grid-cols-4 items-center gap-4">
+              <div></div>
+              <div className="col-span-3">
+                <div className={cn(
+                  "text-[10px] p-1.5 rounded-md border",
+                  modelFetchStatus.type === 'success' ? "bg-primary/10 border-primary/20 text-primary" : "bg-destructive/10 border-destructive/20 text-destructive"
+                )}>
+                  {modelFetchStatus.message}
+                </div>
+              </div>
+            </div>
+          )}
 
           <FileUploadField label="自定义背景" field="customBackground" placeholder="仅在亮色模式生效" />
           

@@ -30,6 +30,7 @@ export interface AppSettings {
   apiKey: string;
   apiEndpoint: string;
   modelName: string;
+  availableModels?: string[];
   customBackground?: string;
   systemInstruction?: string;
   githubOwner?: string;
