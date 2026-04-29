@@ -31,10 +31,14 @@ export interface AppSettings {
   apiEndpoint: string;
   modelName: string;
   customBackground?: string;
-  welcomeMessage?: string;
   systemInstruction?: string;
   githubOwner?: string;
   githubRepo?: string;
+  showSplashScreen?: boolean;
+  splashText?: string;
+  splashImage?: string;
+  splashSubtitle?: string;
+  splashDuration?: number;
 }
 
 export interface ChatState {

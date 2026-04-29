@@ -281,7 +281,15 @@ const MessageItem: React.FC<{
 
       {message.role === 'assistant' && (
         <Avatar className="w-8 h-8 border border-border shrink-0 mt-1">
+          {settings.aiAvatar && <AvatarImage src={settings.aiAvatar} />}
           <AvatarFallback><Bot size={16} /></AvatarFallback>
+        </Avatar>
+      )}
+
+      {message.role === 'user' && (
+        <Avatar className="w-8 h-8 border border-border shrink-0 mt-1">
+          {settings.userAvatar && <AvatarImage src={settings.userAvatar} />}
+          <AvatarFallback><User size={16} /></AvatarFallback>
         </Avatar>
       )}
 
@@ -298,8 +306,8 @@ const MessageItem: React.FC<{
         <div className={cn(
           "px-5 py-4 rounded-[20px] text-[15px] leading-relaxed transition-all relative overflow-hidden",
           message.role === 'user' 
-            ? "bg-white dark:bg-card border border-border rounded-br-[4px] text-black dark:text-foreground" 
-            : "bg-white dark:bg-card border border-border rounded-bl-[4px] text-black dark:text-foreground",
+            ? "bg-white dark:bg-card border border-border text-black dark:text-foreground" 
+            : "bg-white dark:bg-card border border-border text-black dark:text-foreground",
           isSelected && "ring-2 ring-primary/50 border-primary/50 shadow-lg shadow-primary/10",
           contextMenuId === message.id && "ring-2 ring-primary/30 scale-[0.99]"
         )}>
@@ -636,9 +644,10 @@ export const MessageList: React.FC<MessageListProps> = ({
           className="flex gap-3"
         >
           <Avatar className="w-8 h-8 border animate-pulse">
+            {settings.aiAvatar && <AvatarImage src={settings.aiAvatar} />}
             <AvatarFallback><Bot size={16} /></AvatarFallback>
           </Avatar>
-          <div className="bg-white dark:bg-muted border border-border dark:border-none px-4 py-3 rounded-2xl rounded-tl-none shadow-sm dark:shadow-none">
+          <div className="bg-white dark:bg-muted border border-border dark:border-none px-4 py-3 rounded-2xl shadow-sm dark:shadow-none">
             <div className="flex gap-1">
               <span className="w-1.5 h-1.5 bg-foreground/30 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
               <span className="w-1.5 h-1.5 bg-foreground/30 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />

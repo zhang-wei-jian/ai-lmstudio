@@ -115,7 +115,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
             <Button
               variant="outline"
               size="icon"
-              className="w-10 h-10 rounded-lg border-dashed"
+              className="w-10 h-10 rounded-lg border-dashed transition-all hover:bg-primary/10 hover:text-primary active:scale-95"
               onClick={() => handleImageSelect(field, CameraSource.Camera)}
               title="拍照"
             >
@@ -124,7 +124,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
             <Button
               variant="outline"
               size="icon"
-              className="w-10 h-10 rounded-lg border-dashed"
+              className="w-10 h-10 rounded-lg border-dashed transition-all hover:bg-primary/10 hover:text-primary active:scale-95"
               onClick={() => handleImageSelect(field, CameraSource.Photos)}
               title="相册"
             >
@@ -186,10 +186,63 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
 
           <FileUploadField label="自定义背景" field="customBackground" placeholder="仅在亮色模式生效" />
           
-          <div className="grid grid-cols-4 items-center gap-4">
-            <Label htmlFor="welcomeMessage" className="text-right text-xs">欢迎标语</Label>
-            <Input id="welcomeMessage" name="welcomeMessage" value={localSettings.welcomeMessage || ''} onChange={handleChange} className="col-span-3 h-8 text-xs" />
+          <div className="border-t pt-4 mt-2">
+            <h4 className="text-xs font-semibold mb-3">启动页设置</h4>
+            <div className="space-y-3">
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="showSplashScreen" className="text-right text-xs">启用启动页</Label>
+                <div className="col-span-3 flex items-center h-8">
+                  <input
+                    id="showSplashScreen"
+                    type="checkbox"
+                    checked={localSettings.showSplashScreen}
+                    onChange={(e) => setLocalSettings(prev => ({ ...prev, showSplashScreen: e.target.checked }))}
+                    className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary"
+                  />
+                </div>
+              </div>
+              
+              {localSettings.showSplashScreen && (
+                <>
+                  <div className="grid grid-cols-4 items-center gap-4">
+                    <Label htmlFor="splashText" className="text-right text-xs">启动文本</Label>
+                    <Input 
+                      id="splashText" 
+                      name="splashText" 
+                      value={localSettings.splashText || ''} 
+                      onChange={handleChange} 
+                      className="col-span-3 h-8 text-xs" 
+                      placeholder="例如：Aether-X" 
+                    />
+                  </div>
+                  <FileUploadField label="启动图片" field="splashImage" />
+                  <div className="grid grid-cols-4 items-center gap-4">
+                    <Label htmlFor="splashSubtitle" className="text-right text-xs">启动子文本</Label>
+                    <Input 
+                      id="splashSubtitle" 
+                      name="splashSubtitle" 
+                      value={localSettings.splashSubtitle || ''} 
+                      onChange={handleChange} 
+                      className="col-span-3 h-8 text-xs" 
+                      placeholder="例如：Loading AI Experience" 
+                    />
+                  </div>
+                  <div className="grid grid-cols-4 items-center gap-4">
+                    <Label htmlFor="splashDuration" className="text-right text-xs">持续时间(ms)</Label>
+                    <Input 
+                      id="splashDuration" 
+                      name="splashDuration" 
+                      type="number"
+                      value={localSettings.splashDuration || 2000} 
+                      onChange={(e) => setLocalSettings(prev => ({ ...prev, splashDuration: parseInt(e.target.value) || 2000 }))} 
+                      className="col-span-3 h-8 text-xs" 
+                    />
+                  </div>
+                </>
+              )}
+            </div>
           </div>
+
           <div className="grid grid-cols-4 items-center gap-4">
             <Label htmlFor="systemInstruction" className="text-right text-xs">回复逻辑</Label>
             <Input id="systemInstruction" name="systemInstruction" value={localSettings.systemInstruction || ''} onChange={handleChange} className="col-span-3 h-8 text-xs" placeholder="例如：你是一个专业的程序员" />
@@ -227,7 +280,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
                 <Button 
                   variant="outline" 
                   size="sm" 
-                  className="h-8 text-xs px-3"
+                  className="h-8 text-xs px-3 transition-all hover:bg-primary/10 hover:text-primary active:scale-95"
                   onClick={handleInnerCheckUpdate}
                   disabled={isChecking}
                 >
@@ -238,7 +291,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
           </div>
         </div>
         <DialogFooter>
-          <Button onClick={handleSave} className="w-full">保存更改</Button>
+          <Button onClick={handleSave} className="w-full transition-all hover:bg-primary/90 active:scale-95">保存更改</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
