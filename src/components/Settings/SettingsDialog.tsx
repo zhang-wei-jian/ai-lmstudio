@@ -106,7 +106,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
       }
     } catch (error) {
       console.error('Fetch models error:', error);
-      setModelFetchStatus({ type: 'error', message: '连接失败，请检查地址是否正确' });
+      setModelFetchStatus({ type: 'error', message: `连接失败: ${error instanceof Error ? error.message : '请检查 API 地址及是否支持 CORS'}` });
     } finally {
       setIsFetchingModels(false);
     }
@@ -213,7 +213,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
           <div className="flex items-center justify-between">
             <DialogTitle>应用设置</DialogTitle>
             <span className="text-[10px] font-mono text-muted-foreground mr-6">
-              {localStorage.getItem('app_version') || 'v0.0.2'}
+              {localStorage.getItem('app_version') || 'v0.0.4'}
             </span>
           </div>
         </DialogHeader>
