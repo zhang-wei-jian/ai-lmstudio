@@ -30,3 +30,29 @@ export function formatMessageDate(date: Date | string): string {
   
   return `${year}-${month}-${day} ${timeStr}`;
 }
+
+export async function safeSaveToLocalStorage(key: string, value: any): Promise<boolean> {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+    return true;
+  } catch (err) {
+    console.warn(`LocalStorage quota exceeded for key "${key}", attempting fallback to filesystem...`);
+    try {
+      if (typeof window !== 'undefined' && 'Capacitor' in window) {
+        const { Filesystem, Directory, Encoding } = await import('@capacitor/filesystem');
+        await Filesystem.writeFile({
+          path: `data/${key}.json`,
+          data: JSON.stringify(value),
+          directory: Directory.Data,
+          encoding: Encoding.UTF8,
+          recursive: true,
+        });
+        console.log(`Successfully saved "${key}" to filesystem.`);
+        return true;
+      }
+    } catch (fsErr) {
+      console.error(`Filesystem save error for key "${key}":`, fsErr);
+    }
+    return false;
+  }
+}

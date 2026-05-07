@@ -21,10 +21,37 @@ import { Button } from '@/components/ui/button';
 import { Input } from './components/ui/input';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from './lib/utils';
+import { safeSaveToLocalStorage } from './lib/utils';
 import { Filesystem, Directory, Encoding } from '@capacitor/filesystem';
 import { FileOpener } from '@capacitor-community/file-opener';
 import { Clipboard } from '@capacitor/clipboard';
 import { Toast } from '@capacitor/toast';
+
+// Synchronous theme initialization to prevent flash
+const getInitialTheme = (): 'light' | 'dark' => {
+  if (typeof window !== 'undefined') {
+    const savedTheme = localStorage.getItem('app_theme');
+    if (savedTheme) {
+      try {
+        const parsed = JSON.parse(savedTheme);
+        return (parsed === 'light' || parsed === 'dark') ? parsed : 'dark';
+      } catch (e) {
+        return (savedTheme === 'light' || savedTheme === 'dark') ? savedTheme : 'dark';
+      }
+    }
+  }
+  return 'dark';
+};
+
+const initialTheme = getInitialTheme();
+
+if (typeof document !== 'undefined') {
+  if (initialTheme === 'dark') {
+    document.documentElement.classList.add('dark');
+  } else {
+    document.documentElement.classList.remove('dark');
+  }
+}
 
 const DEFAULT_SETTINGS: AppSettings = {
   userName: '用户',
@@ -41,7 +68,9 @@ const DEFAULT_SETTINGS: AppSettings = {
   splashText: 'Aether-X',
   splashImage: '',
   splashSubtitle: 'Loading AI Experience',
-  splashDuration: 2000,
+  splashDuration: 1000,
+  backgroundOpacity: 0.2,
+  showBackgroundInDarkMode: true,
 };
 
 export default function App() {
@@ -89,14 +118,57 @@ export default function App() {
   });
 
   const [quotedMessage, setQuotedMessage] = useState<Message | null>(null);
-  const [theme, setTheme] = useState<'light' | 'dark'>(() => {
-    const savedTheme = localStorage.getItem('app_theme');
-    return (savedTheme as 'light' | 'dark') || 'dark';
-  });
+  const [theme, setTheme] = useState<'light' | 'dark'>(initialTheme);
 
 
   // Wake Lock implementation
   useEffect(() => {
+    async function loadFallbackData() {
+      if (typeof window !== 'undefined' && 'Capacitor' in window) {
+        try {
+          const { Filesystem, Directory, Encoding } = await import('@capacitor/filesystem');
+          
+          // Try loading chat history
+          try {
+            const chatResult = await Filesystem.readFile({
+              path: 'data/chat_history.json',
+              directory: Directory.Data,
+              encoding: Encoding.UTF8,
+            });
+            if (chatResult.data) {
+              const messages = JSON.parse(chatResult.data as string).map((m: any) => ({
+                ...m,
+                timestamp: new Date(m.timestamp)
+              }));
+              setState(prev => ({ ...prev, messages }));
+              console.log('Loaded chat history from filesystem.');
+            }
+          } catch (e) {
+            console.log('No chat history found on filesystem.');
+          }
+
+          // Try loading settings
+          try {
+            const settingsResult = await Filesystem.readFile({
+              path: 'data/gemini_settings.json',
+              directory: Directory.Data,
+              encoding: Encoding.UTF8,
+            });
+            if (settingsResult.data) {
+              const settings = JSON.parse(settingsResult.data as string);
+              setState(prev => ({ ...prev, settings: { ...DEFAULT_SETTINGS, ...settings } }));
+              console.log('Loaded settings from filesystem.');
+            }
+          } catch (e) {
+            console.log('No settings found on filesystem.');
+          }
+        } catch (fsErr) {
+          console.error('Filesystem load error:', fsErr);
+        }
+      }
+    }
+    loadFallbackData();
+    
     let wakeLock: WakeLockSentinel | null = null;
 
     const requestWakeLock = async () => {
@@ -152,15 +224,7 @@ export default function App() {
 
 
   useEffect(() => {
-    try {
-        localStorage.setItem('chat_history', JSON.stringify(state.messages));
-    } catch (error) {
-        if (error instanceof Error && (error.name === 'QuotaExceededError' || error.message.includes('QuotaExceededError'))) {
-            console.warn('LocalStorage quota exceeded, please clear some history.');
-        } else {
-            console.error('Failed to save chat history', error);
-        }
-    }
+    safeSaveToLocalStorage('chat_history', state.messages);
   }, [state.messages]);
 
   useEffect(() => {
@@ -176,11 +240,11 @@ export default function App() {
   }, [state.isLoading, state.messages, state.settings.aiName]);
 
   useEffect(() => {
-    localStorage.setItem('gemini_settings', JSON.stringify(state.settings));
+    safeSaveToLocalStorage('gemini_settings', state.settings);
   }, [state.settings]);
 
   useEffect(() => {
-    localStorage.setItem('app_theme', theme);
+    safeSaveToLocalStorage('app_theme', theme);
     if (theme === 'dark') {
       document.documentElement.classList.add('dark');
     } else {
@@ -927,10 +991,13 @@ export default function App() {
         {/* Main Chat Area */}
         <div className="flex-1 flex flex-col relative overflow-hidden">
           {/* Custom Background Layer */}
-          {theme === 'light' && state.settings.customBackground && (
+          {state.settings.customBackground && (theme === 'light' || state.settings.showBackgroundInDarkMode) && (
             <div 
-              className="absolute inset-0 z-0 opacity-40 pointer-events-none bg-cover bg-center bg-no-repeat"
-              style={{ backgroundImage: `url(${state.settings.customBackground})` }}
+              className="absolute inset-0 z-0 pointer-events-none bg-cover bg-center bg-no-repeat"
+              style={{ 
+                backgroundImage: `url(${state.settings.customBackground})`,
+                opacity: state.settings.backgroundOpacity ?? 0.2
+              }}
             />
           )}
           
@@ -1040,4 +1107,3 @@ export default function App() {
     </div>
   );
 }
-

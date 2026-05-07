@@ -31,6 +31,8 @@ export interface AppSettings {
   modelName: string;
   availableModels?: string[];
   customBackground?: string;
+  backgroundOpacity?: number;
+  showBackgroundInDarkMode?: boolean;
   systemInstruction?: string;
   githubOwner?: string;
   githubRepo?: string;

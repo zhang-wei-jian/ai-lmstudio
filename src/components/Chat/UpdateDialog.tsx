@@ -15,6 +15,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Rocket, Download, ExternalLink } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
+import { safeSaveToLocalStorage } from '@/lib/utils';
 
 interface UpdateDialogProps {
   isOpen: boolean;
@@ -67,7 +68,7 @@ export const UpdateDialog: React.FC<UpdateDialogProps> = ({
               if (onUpdate) {
                 onUpdate();
               } else {
-                localStorage.setItem('app_version', version);
+                safeSaveToLocalStorage('app_version', version);
                 window.location.reload();
               }
             }}
