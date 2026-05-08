@@ -34,9 +34,27 @@ export function formatMessageDate(date: Date | string): string {
 export async function safeSaveToLocalStorage(key: string, value: any): Promise<boolean> {
   try {
     localStorage.setItem(key, JSON.stringify(value));
+    
+    // Always attempt backup to filesystem if Capacitor is available
+    if (typeof window !== 'undefined' && 'Capacitor' in window) {
+      try {
+        const { Filesystem, Directory, Encoding } = await import('@capacitor/filesystem');
+        await Filesystem.writeFile({
+          path: `data/${key}.json`,
+          data: JSON.stringify(value),
+          directory: Directory.Data,
+          encoding: Encoding.UTF8,
+          recursive: true,
+        });
+      } catch (fsErr) {
+        console.error(`Filesystem backup error for key "${key}":`, fsErr);
+      }
+    }
+    
     return true;
   } catch (err) {
-    console.warn(`LocalStorage quota exceeded for key "${key}", attempting fallback to filesystem...`);
+    console.warn(`LocalStorage write failed for key "${key}", filesystem backup only.`);
+    // Still attempt fallback to filesystem if localStorage.setItem fails
     try {
       if (typeof window !== 'undefined' && 'Capacitor' in window) {
         const { Filesystem, Directory, Encoding } = await import('@capacitor/filesystem');

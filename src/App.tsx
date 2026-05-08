@@ -140,8 +140,13 @@ export default function App() {
                 ...m,
                 timestamp: new Date(m.timestamp)
               }));
-              setState(prev => ({ ...prev, messages }));
-              console.log('Loaded chat history from filesystem.');
+              setState(prev => {
+                if (prev.messages.length === 0) {
+                  console.log('Loaded chat history from filesystem.');
+                  return { ...prev, messages };
+                }
+                return prev;
+              });
             }
           } catch (e) {
             console.log('No chat history found on filesystem.');
@@ -156,8 +161,14 @@ export default function App() {
             });
             if (settingsResult.data) {
               const settings = JSON.parse(settingsResult.data as string);
-              setState(prev => ({ ...prev, settings: { ...DEFAULT_SETTINGS, ...settings } }));
-              console.log('Loaded settings from filesystem.');
+              setState(prev => {
+                // Only overwrite if it looks like default settings
+                if (prev.settings.apiKey === '' && prev.settings.userName === '用户') {
+                  console.log('Loaded settings from filesystem.');
+                  return { ...prev, settings: { ...DEFAULT_SETTINGS, ...settings } };
+                }
+                return prev;
+              });
             }
           } catch (e) {
             console.log('No settings found on filesystem.');
