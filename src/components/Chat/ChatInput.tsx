@@ -74,12 +74,13 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage, quotedMessa
         source: CameraSource.Camera
       });
       
-      if (image.dataUrl) {
+      if (image?.dataUrl) {
         setPreviewImage(image.dataUrl);
       }
     } catch (error: any) {
       if (error?.message !== 'User cancelled photos app') {
         console.error('Camera error:', error);
+        await Toast.show({ text: '相机访问失败，请检查权限。' });
       }
     }
   };
@@ -94,12 +95,13 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage, quotedMessa
         source: CameraSource.Photos
       });
       
-      if (image.dataUrl) {
+      if (image?.dataUrl) {
         setPreviewImage(image.dataUrl);
       }
     } catch (error: any) {
       if (error?.message !== 'User cancelled photos app') {
         console.error('Gallery error:', error);
+        await Toast.show({ text: '相册访问失败，请检查权限。' });
       }
     }
   };
@@ -153,6 +155,8 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage, quotedMessa
       }
     }
   };
+
+
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -250,6 +254,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage, quotedMessa
                   exit={{ opacity: 0, scale: 0.9, y: 10 }}
                   className="absolute bottom-full left-0 mb-2 p-4 bg-popover border border-border rounded-2xl shadow-xl min-w-[180px]"
                 >
+
                   <button 
                     type="button"
                     className="w-full flex items-center gap-3 px-4 py-3 text-sm hover:bg-muted rounded-xl transition-colors active:scale-[0.98]"
@@ -270,6 +275,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage, quotedMessa
               )}
             </AnimatePresence>
           </div>
+
 
           {/* Center: Text Input */}
           <div className="flex-1 relative">

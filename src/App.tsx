@@ -16,16 +16,42 @@ import { Button } from '@/components/ui/button';
 import { Input } from './components/ui/input';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from './lib/utils';
+import { safeSaveToLocalStorage } from './lib/utils';
 import { Filesystem, Directory, Encoding } from '@capacitor/filesystem';
 import { FileOpener } from '@capacitor-community/file-opener';
 import { Clipboard } from '@capacitor/clipboard';
 import { Toast } from '@capacitor/toast';
 
+// Synchronous theme initialization to prevent flash
+const getInitialTheme = (): 'light' | 'dark' => {
+  if (typeof window !== 'undefined') {
+    const savedTheme = localStorage.getItem('app_theme');
+    if (savedTheme) {
+      try {
+        const parsed = JSON.parse(savedTheme);
+        return (parsed === 'light' || parsed === 'dark') ? parsed : 'dark';
+      } catch (e) {
+        return (savedTheme === 'light' || savedTheme === 'dark') ? savedTheme : 'dark';
+      }
+    }
+  }
+  return 'dark';
+};
+
+const initialTheme = getInitialTheme();
+
+if (typeof document !== 'undefined') {
+  if (initialTheme === 'dark') {
+    document.documentElement.classList.add('dark');
+  } else {
+    document.documentElement.classList.remove('dark');
+  }
+}
+
 const DEFAULT_SETTINGS: AppSettings = {
   userName: '用户',
   userAvatar: '',
   aiName: 'Aether-X',
-  aiSubtitle: '专业版',
   aiAvatar: '',
   apiKey: '',
   apiEndpoint: '',
@@ -37,7 +63,9 @@ const DEFAULT_SETTINGS: AppSettings = {
   splashText: 'Aether-X',
   splashImage: '',
   splashSubtitle: 'Loading AI Experience',
-  splashDuration: 2000,
+  splashDuration: 1000,
+  backgroundOpacity: 0.2,
+  showBackgroundInDarkMode: true,
 };
 
 const DEFAULT_SESSIONS: ChatSession[] = [
@@ -145,10 +173,8 @@ export default function App() {
   });
 
   const [quotedMessage, setQuotedMessage] = useState<Message | null>(null);
-  const [theme, setTheme] = useState<'light' | 'dark'>(() => {
-    const savedTheme = localStorage.getItem('app_theme');
-    return (savedTheme as 'light' | 'dark') || 'dark';
-  });
+  const [theme, setTheme] = useState<'light' | 'dark'>(initialTheme);
+  const [isUpdating, setIsUpdating] = useState(false);
 
   // Session management effects
   useEffect(() => {
@@ -253,6 +279,63 @@ export default function App() {
 
   // Wake Lock implementation
   useEffect(() => {
+    async function loadFallbackData() {
+      if (typeof window !== 'undefined' && 'Capacitor' in window) {
+        try {
+          const { Filesystem, Directory, Encoding } = await import('@capacitor/filesystem');
+          
+          // Try loading chat history
+          try {
+            const chatResult = await Filesystem.readFile({
+              path: 'data/chat_history.json',
+              directory: Directory.Data,
+              encoding: Encoding.UTF8,
+            });
+            if (chatResult.data) {
+              const messages = JSON.parse(chatResult.data as string).map((m: any) => ({
+                ...m,
+                timestamp: new Date(m.timestamp)
+              }));
+              setState(prev => {
+                if (prev.messages.length === 0) {
+                  console.log('Loaded chat history from filesystem.');
+                  return { ...prev, messages };
+                }
+                return prev;
+              });
+            }
+          } catch (e) {
+            console.log('No chat history found on filesystem.');
+          }
+
+          // Try loading settings
+          try {
+            const settingsResult = await Filesystem.readFile({
+              path: 'data/gemini_settings.json',
+              directory: Directory.Data,
+              encoding: Encoding.UTF8,
+            });
+            if (settingsResult.data) {
+              const settings = JSON.parse(settingsResult.data as string);
+              setState(prev => {
+                // Only overwrite if it looks like default settings
+                if (prev.settings.apiKey === '' && prev.settings.userName === '用户') {
+                  console.log('Loaded settings from filesystem.');
+                  return { ...prev, settings: { ...DEFAULT_SETTINGS, ...settings } };
+                }
+                return prev;
+              });
+            }
+          } catch (e) {
+            console.log('No settings found on filesystem.');
+          }
+        } catch (fsErr) {
+          console.error('Filesystem load error:', fsErr);
+        }
+      }
+    }
+    loadFallbackData();
+    
     let wakeLock: WakeLockSentinel | null = null;
 
     const requestWakeLock = async () => {
@@ -308,15 +391,7 @@ export default function App() {
 
 
   useEffect(() => {
-    try {
-        localStorage.setItem('chat_history', JSON.stringify(state.messages));
-    } catch (error) {
-        if (error instanceof Error && (error.name === 'QuotaExceededError' || error.message.includes('QuotaExceededError'))) {
-            console.warn('LocalStorage quota exceeded, please clear some history.');
-        } else {
-            console.error('Failed to save chat history', error);
-        }
-    }
+    safeSaveToLocalStorage('chat_history', state.messages);
   }, [state.messages]);
 
   useEffect(() => {
@@ -332,11 +407,11 @@ export default function App() {
   }, [state.isLoading, state.messages, state.settings.aiName]);
 
   useEffect(() => {
-    localStorage.setItem('gemini_settings', JSON.stringify(state.settings));
+    safeSaveToLocalStorage('gemini_settings', state.settings);
   }, [state.settings]);
 
   useEffect(() => {
-    localStorage.setItem('app_theme', theme);
+    safeSaveToLocalStorage('app_theme', theme);
     if (theme === 'dark') {
       document.documentElement.classList.add('dark');
     } else {
@@ -724,7 +799,7 @@ export default function App() {
       
       const data = await response.json();
       const latestVersion = data.tag_name;
-      const currentVersion = localStorage.getItem('app_version') || 'v0.0.2'; 
+      const currentVersion = localStorage.getItem('app_version') || 'v0.0.5'; 
 
       const apkAsset = data.assets?.find((asset: any) => asset.name.endsWith('.apk'));
       const apkUrl = apkAsset?.browser_download_url;
@@ -748,12 +823,14 @@ export default function App() {
 
   const handleDownloadAndInstall = async (url: string, fileName: string) => {
     try {
+      setIsUpdating(true);
       await Toast.show({ text: '开始下载更新包...', duration: 'long' });
       
       const isWeb = !window.hasOwnProperty('Capacitor') || (window as any).Capacitor?.getPlatform() === 'web';
       
       if (isWeb) {
         window.open(url, '_blank');
+        setIsUpdating(false);
         return;
       }
 
@@ -775,6 +852,8 @@ export default function App() {
       console.error('Update failed', error);
       await Toast.show({ text: '更新失败，请前往浏览器手动下载' });
       window.open(url, '_blank');
+    } finally {
+      setIsUpdating(false);
     }
   };
 
@@ -855,7 +934,6 @@ export default function App() {
             {state.settings.splashText || state.settings.aiName}
           </h1>
           <p className="text-sm text-muted-foreground font-medium uppercase tracking-[0.2em] opacity-60">
-            {state.settings.aiSubtitle}
           </p>
         </div>
       </motion.div>
@@ -873,7 +951,9 @@ export default function App() {
       <AnimatePresence mode="wait">
         {showSplash && state.settings.showSplashScreen && <SplashScreen key="splash" />}
       </AnimatePresence>
+
       
+
       {/* Sidebar Overlay Backdrop */}
       <AnimatePresence>
         {isSidebarOpen && (
@@ -891,6 +971,7 @@ export default function App() {
       <AnimatePresence>
         {isSidebarOpen && (
           <motion.aside
+
             initial={{ x: -320 }}
             animate={{ x: 0 }}
             exit={{ x: -320 }}
@@ -988,6 +1069,7 @@ export default function App() {
               >
                 {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
                 <span className="text-xs ml-2">{theme === 'dark' ? '浅色模式' : '深色模式'}</span>
+
               </Button>
               
               <div className="flex gap-2">
@@ -1021,6 +1103,7 @@ export default function App() {
               </div>
 
               <Button 
+
                 variant="outline" 
                 className="w-full h-9 rounded-xl gap-2 text-muted-foreground hover:bg-primary/5 hover:text-primary transition-all"
                 onClick={() => {
@@ -1030,6 +1113,7 @@ export default function App() {
               >
                 <Settings size={16} />
                 设置
+
               </Button>
             </div>
           </motion.aside>
@@ -1037,6 +1121,7 @@ export default function App() {
       </AnimatePresence>
 
       {/* Main Content */}
+
       <main className={cn(
         "flex-1 flex flex-col relative w-full h-screen overflow-hidden transition-all duration-300",
         isSidebarOpen && "ml-80"
@@ -1056,6 +1141,7 @@ export default function App() {
               >
                 {isSidebarOpen ? <ChevronLeft size={18} /> : <PanelLeft size={18} />}
               </Button>
+
 
               <Button
                 variant="ghost"
@@ -1217,7 +1303,9 @@ export default function App() {
                     exit={{ opacity: 0, y: -10 }}
                     className="text-center"
                   >
+
                     <p className="text-[10px] text-muted-foreground">{state.settings.modelName}</p>
+
                   </motion.div>
                 )}
               </AnimatePresence>
@@ -1237,11 +1325,13 @@ export default function App() {
             </div>
           </header>
 
+
           {/* Error Banner */}
           {state.error && (
             <div className="bg-destructive/10 text-destructive text-xs p-2 text-center border-b">
               {state.error}
             </div>
+
           )}
 
           {/* Main Chat Area */}
@@ -1383,6 +1473,7 @@ export default function App() {
           version={updateInfo.version}
           changelog={updateInfo.body}
           downloadUrl={updateInfo.apkUrl || updateInfo.url}
+          isUpdating={isUpdating}
           onUpdate={() => {
             if (updateInfo.apkUrl) {
               handleDownloadAndInstall(updateInfo.apkUrl, `update_${updateInfo.version}.apk`);
@@ -1394,4 +1485,6 @@ export default function App() {
       )}
     </div>
   );
+
 }
+
