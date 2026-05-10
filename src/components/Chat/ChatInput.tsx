@@ -78,12 +78,13 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage, quotedMessa
         source: CameraSource.Camera
       });
       
-      if (image.dataUrl) {
+      if (image?.dataUrl) {
         setPreviewImage(image.dataUrl);
       }
     } catch (error: any) {
       if (error?.message !== 'User cancelled photos app') {
         console.error('Camera error:', error);
+        await Toast.show({ text: '相机访问失败，请检查权限。' });
       }
     }
   };
@@ -98,12 +99,13 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage, quotedMessa
         source: CameraSource.Photos
       });
       
-      if (image.dataUrl) {
+      if (image?.dataUrl) {
         setPreviewImage(image.dataUrl);
       }
     } catch (error: any) {
       if (error?.message !== 'User cancelled photos app') {
         console.error('Gallery error:', error);
+        await Toast.show({ text: '相册访问失败，请检查权限。' });
       }
     }
   };
@@ -165,7 +167,11 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage, quotedMessa
       const reader = new FileReader();
       reader.onloadend = () => {
         setPreviewImage(reader.result as string);
-        e.target.value = '';
+        if (e.target) e.target.value = '';
+      };
+      reader.onerror = () => {
+        console.error('FileReader error');
+        Toast.show({ text: '图片读取失败，请尝试其他文件。' });
       };
       reader.readAsDataURL(file);
     }
