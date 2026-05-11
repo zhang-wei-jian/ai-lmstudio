@@ -519,10 +519,10 @@ export default function App() {
   const runGeminiQuery = useCallback(async (allMessagesSoFar: Message[]) => {
     const assistantMessageId = crypto.randomUUID();
     
-    // 1. Append Assistant placeholder
+    // Append Assistant placeholder to PREVIOUS messages (state.messages already includes the previous user message and its response)
     setState(prev => ({
       ...prev,
-      messages: [...allMessagesSoFar, {
+      messages: [...prev.messages, {
         id: assistantMessageId,
         role: 'assistant',
         content: "",
@@ -561,9 +561,8 @@ export default function App() {
     if (!state.isLoading && queueRef.current.length > 0) {
       const nextUserMessage = queueRef.current.shift();
       if (nextUserMessage) {
-        // We need to re-build context for the next call as well.
-        // Since state.messages already contains all messages, we can use it.
-        const context = state.messages;
+        // Re-construct the context with the latest state (which now includes the completed previous AI response)
+        const context = [...state.messages, nextUserMessage];
         runGeminiQuery(context);
       }
     }
