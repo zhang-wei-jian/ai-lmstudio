@@ -25,13 +25,14 @@ export interface AppSettings {
   userName: string;
   userAvatar: string;
   aiName: string;
-  aiSubtitle: string;
   aiAvatar: string;
   apiKey: string;
   apiEndpoint: string;
   modelName: string;
   availableModels?: string[];
   customBackground?: string;
+  backgroundOpacity?: number;
+  showBackgroundInDarkMode?: boolean;
   systemInstruction?: string;
   githubOwner?: string;
   githubRepo?: string;

@@ -20,6 +20,7 @@ import { Camera as CapCamera, CameraResultType, CameraSource } from '@capacitor/
 import { CapacitorHttp } from '@capacitor/core';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../../lib/utils';
+import { ImageCropDialog } from './ImageCropDialog';
 
 interface SettingsDialogProps {
   open: boolean;
@@ -41,6 +42,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
   const [isChecking, setIsChecking] = React.useState(false);
   const [isFetchingModels, setIsFetchingModels] = React.useState(false);
   const [modelFetchStatus, setModelFetchStatus] = React.useState<{ type: 'error' | 'success', message: string } | null>(null);
+  const [cropImage, setCropImage] = React.useState<{ src: string, field: keyof AppSettings } | null>(null);
 
   React.useEffect(() => {
     if (!open) {
@@ -141,10 +143,12 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
       });
       
       if (image.dataUrl) {
-        setLocalSettings(prev => ({ ...prev, [field]: image.dataUrl as string }));
+        setCropImage({ src: image.dataUrl, field });
       }
-    } catch (error) {
-      console.error('Image selection error:', error);
+    } catch (error: any) {
+      if (error?.message !== 'User cancelled photos app') {
+        console.error('Image selection error:', error);
+      }
     }
   };
 
@@ -213,7 +217,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
           <div className="flex items-center justify-between">
             <DialogTitle>应用设置</DialogTitle>
             <span className="text-[10px] font-mono text-muted-foreground mr-6">
-              {localStorage.getItem('app_version') || 'v0.0.4'}
+              {localStorage.getItem('app_version') || 'v0.0.5'}
             </span>
           </div>
         </DialogHeader>
@@ -228,10 +232,6 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
           <div className="grid grid-cols-4 items-center gap-4">
             <Label htmlFor="aiName" className="text-right text-xs">AI 名称</Label>
             <Input id="aiName" name="aiName" value={localSettings.aiName} onChange={handleChange} className="col-span-3 h-8 text-xs" />
-          </div>
-          <div className="grid grid-cols-4 items-center gap-4">
-            <Label htmlFor="aiSubtitle" className="text-right text-xs">AI 副标题</Label>
-            <Input id="aiSubtitle" name="aiSubtitle" value={localSettings.aiSubtitle} onChange={handleChange} className="col-span-3 h-8 text-xs" />
           </div>
 
           <FileUploadField label="AI 头像" field="aiAvatar" />
@@ -299,7 +299,35 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
             </div>
           )}
 
-          <FileUploadField label="自定义背景" field="customBackground" placeholder="仅在亮色模式生效" />
+          <FileUploadField label="自定义背景" field="customBackground" placeholder="应用自定义壁纸" />
+          
+          <div className="grid grid-cols-4 items-center gap-4">
+            <Label htmlFor="backgroundOpacity" className="text-right text-xs">透明度</Label>
+            <Input 
+              id="backgroundOpacity" 
+              name="backgroundOpacity" 
+              type="number"
+              step="0.1"
+              min="0"
+              max="1"
+              value={localSettings.backgroundOpacity ?? 0.2} 
+              onChange={(e) => setLocalSettings(prev => ({ ...prev, backgroundOpacity: parseFloat(e.target.value) || 0 }))} 
+              className="col-span-3 h-8 text-xs" 
+            />
+          </div>
+          
+          <div className="grid grid-cols-4 items-center gap-4">
+            <Label htmlFor="showBackgroundInDarkMode" className="text-right text-xs">暗夜模式显示</Label>
+            <div className="col-span-3 flex items-center h-8">
+              <input
+                id="showBackgroundInDarkMode"
+                type="checkbox"
+                checked={localSettings.showBackgroundInDarkMode}
+                onChange={(e) => setLocalSettings(prev => ({ ...prev, showBackgroundInDarkMode: e.target.checked }))}
+                className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary"
+              />
+            </div>
+          </div>
           
           <div className="border-t pt-4 mt-2">
             <h4 className="text-xs font-semibold mb-3">启动页设置</h4>
@@ -348,8 +376,14 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
                       id="splashDuration" 
                       name="splashDuration" 
                       type="number"
-                      value={localSettings.splashDuration || 2000} 
-                      onChange={(e) => setLocalSettings(prev => ({ ...prev, splashDuration: parseInt(e.target.value) || 2000 }))} 
+                      value={localSettings.splashDuration === 0 ? '' : (localSettings.splashDuration || 1000)} 
+                      onChange={(e) => setLocalSettings(prev => ({ ...prev, splashDuration: e.target.value === '' ? 0 : parseInt(e.target.value) }))} 
+                      onBlur={(e) => {
+                        const val = parseInt(e.target.value);
+                        if (isNaN(val) || val < 1000) {
+                          setLocalSettings(prev => ({ ...prev, splashDuration: 1000 }));
+                        }
+                      }}
                       className="col-span-3 h-8 text-xs" 
                     />
                   </div>
@@ -409,6 +443,17 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
           <Button onClick={handleSave} className="w-full transition-all hover:bg-primary/90 active:scale-95">保存更改</Button>
         </DialogFooter>
       </DialogContent>
+      {cropImage && (
+        <ImageCropDialog
+          imageSrc={cropImage.src}
+          open={!!cropImage}
+          onClose={() => setCropImage(null)}
+          onCropComplete={(croppedImage) => {
+            setLocalSettings(prev => ({ ...prev, [cropImage.field]: croppedImage }));
+            setCropImage(null);
+          }}
+        />
+      )}
     </Dialog>
   );
 };

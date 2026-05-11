@@ -78,12 +78,13 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage, quotedMessa
         source: CameraSource.Camera
       });
       
-      if (image.dataUrl) {
+      if (image?.dataUrl) {
         setPreviewImage(image.dataUrl);
       }
     } catch (error: any) {
       if (error?.message !== 'User cancelled photos app') {
         console.error('Camera error:', error);
+        await Toast.show({ text: '相机访问失败，请检查权限。' });
       }
     }
   };
@@ -98,12 +99,13 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage, quotedMessa
         source: CameraSource.Photos
       });
       
-      if (image.dataUrl) {
+      if (image?.dataUrl) {
         setPreviewImage(image.dataUrl);
       }
     } catch (error: any) {
       if (error?.message !== 'User cancelled photos app') {
         console.error('Gallery error:', error);
+        await Toast.show({ text: '相册访问失败，请检查权限。' });
       }
     }
   };
@@ -165,7 +167,11 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage, quotedMessa
       const reader = new FileReader();
       reader.onloadend = () => {
         setPreviewImage(reader.result as string);
-        e.target.value = '';
+        if (e.target) e.target.value = '';
+      };
+      reader.onerror = () => {
+        console.error('FileReader error');
+        Toast.show({ text: '图片读取失败，请尝试其他文件。' });
       };
       reader.readAsDataURL(file);
     }
@@ -295,6 +301,26 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage, quotedMessa
                   <Camera size={24} />
                 </Button>
                 <span className="text-[10px] text-muted-foreground font-medium">拍照/相册</span>
+              </div>
+              <div className="flex flex-col items-center gap-2">
+                <Button 
+                  type="button"
+                  variant="ghost" 
+                  size="icon" 
+                  className="w-14 h-14 rounded-2xl bg-muted/30 border border-border/50 select-none active:scale-95 transition-all hover:bg-primary/10 hover:text-primary"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={isRecording}
+                >
+                  <Plus size={24} />
+                </Button>
+                <span className="text-[10px] text-muted-foreground font-medium">选文件</span>
+                <input
+                    type="file"
+                    ref={fileInputRef}
+                    className="hidden"
+                    onChange={handleImageUpload}
+                    accept="image/*"
+                />
               </div>
             </motion.div>
           )}

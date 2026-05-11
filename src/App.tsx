@@ -21,16 +21,42 @@ import { Button } from '@/components/ui/button';
 import { Input } from './components/ui/input';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from './lib/utils';
+import { safeSaveToLocalStorage } from './lib/utils';
 import { Filesystem, Directory, Encoding } from '@capacitor/filesystem';
 import { FileOpener } from '@capacitor-community/file-opener';
 import { Clipboard } from '@capacitor/clipboard';
 import { Toast } from '@capacitor/toast';
 
+// Synchronous theme initialization to prevent flash
+const getInitialTheme = (): 'light' | 'dark' => {
+  if (typeof window !== 'undefined') {
+    const savedTheme = localStorage.getItem('app_theme');
+    if (savedTheme) {
+      try {
+        const parsed = JSON.parse(savedTheme);
+        return (parsed === 'light' || parsed === 'dark') ? parsed : 'dark';
+      } catch (e) {
+        return (savedTheme === 'light' || savedTheme === 'dark') ? savedTheme : 'dark';
+      }
+    }
+  }
+  return 'dark';
+};
+
+const initialTheme = getInitialTheme();
+
+if (typeof document !== 'undefined') {
+  if (initialTheme === 'dark') {
+    document.documentElement.classList.add('dark');
+  } else {
+    document.documentElement.classList.remove('dark');
+  }
+}
+
 const DEFAULT_SETTINGS: AppSettings = {
   userName: '用户',
   userAvatar: '',
   aiName: 'Aether-X',
-  aiSubtitle: '专业版',
   aiAvatar: '',
   apiKey: '',
   apiEndpoint: '',
@@ -42,7 +68,9 @@ const DEFAULT_SETTINGS: AppSettings = {
   splashText: 'Aether-X',
   splashImage: '',
   splashSubtitle: 'Loading AI Experience',
-  splashDuration: 2000,
+  splashDuration: 1000,
+  backgroundOpacity: 0.2,
+  showBackgroundInDarkMode: true,
 };
 
 export default function App() {
@@ -90,14 +118,69 @@ export default function App() {
   });
 
   const [quotedMessage, setQuotedMessage] = useState<Message | null>(null);
-  const [theme, setTheme] = useState<'light' | 'dark'>(() => {
-    const savedTheme = localStorage.getItem('app_theme');
-    return (savedTheme as 'light' | 'dark') || 'dark';
-  });
+  const [theme, setTheme] = useState<'light' | 'dark'>(initialTheme);
+  const [isUpdating, setIsUpdating] = useState(false);
 
 
   // Wake Lock implementation
   useEffect(() => {
+    async function loadFallbackData() {
+      if (typeof window !== 'undefined' && 'Capacitor' in window) {
+        try {
+          const { Filesystem, Directory, Encoding } = await import('@capacitor/filesystem');
+          
+          // Try loading chat history
+          try {
+            const chatResult = await Filesystem.readFile({
+              path: 'data/chat_history.json',
+              directory: Directory.Data,
+              encoding: Encoding.UTF8,
+            });
+            if (chatResult.data) {
+              const messages = JSON.parse(chatResult.data as string).map((m: any) => ({
+                ...m,
+                timestamp: new Date(m.timestamp)
+              }));
+              setState(prev => {
+                if (prev.messages.length === 0) {
+                  console.log('Loaded chat history from filesystem.');
+                  return { ...prev, messages };
+                }
+                return prev;
+              });
+            }
+          } catch (e) {
+            console.log('No chat history found on filesystem.');
+          }
+
+          // Try loading settings
+          try {
+            const settingsResult = await Filesystem.readFile({
+              path: 'data/gemini_settings.json',
+              directory: Directory.Data,
+              encoding: Encoding.UTF8,
+            });
+            if (settingsResult.data) {
+              const settings = JSON.parse(settingsResult.data as string);
+              setState(prev => {
+                // Only overwrite if it looks like default settings
+                if (prev.settings.apiKey === '' && prev.settings.userName === '用户') {
+                  console.log('Loaded settings from filesystem.');
+                  return { ...prev, settings: { ...DEFAULT_SETTINGS, ...settings } };
+                }
+                return prev;
+              });
+            }
+          } catch (e) {
+            console.log('No settings found on filesystem.');
+          }
+        } catch (fsErr) {
+          console.error('Filesystem load error:', fsErr);
+        }
+      }
+    }
+    loadFallbackData();
+    
     let wakeLock: WakeLockSentinel | null = null;
 
     const requestWakeLock = async () => {
@@ -153,15 +236,7 @@ export default function App() {
 
 
   useEffect(() => {
-    try {
-        localStorage.setItem('chat_history', JSON.stringify(state.messages));
-    } catch (error) {
-        if (error instanceof Error && (error.name === 'QuotaExceededError' || error.message.includes('QuotaExceededError'))) {
-            console.warn('LocalStorage quota exceeded, please clear some history.');
-        } else {
-            console.error('Failed to save chat history', error);
-        }
-    }
+    safeSaveToLocalStorage('chat_history', state.messages);
   }, [state.messages]);
 
   useEffect(() => {
@@ -177,11 +252,11 @@ export default function App() {
   }, [state.isLoading, state.messages, state.settings.aiName]);
 
   useEffect(() => {
-    localStorage.setItem('gemini_settings', JSON.stringify(state.settings));
+    safeSaveToLocalStorage('gemini_settings', state.settings);
   }, [state.settings]);
 
   useEffect(() => {
-    localStorage.setItem('app_theme', theme);
+    safeSaveToLocalStorage('app_theme', theme);
     if (theme === 'dark') {
       document.documentElement.classList.add('dark');
     } else {
@@ -527,7 +602,7 @@ export default function App() {
       
       const data = await response.json();
       const latestVersion = data.tag_name;
-      const currentVersion = localStorage.getItem('app_version') || 'v0.0.2'; 
+      const currentVersion = localStorage.getItem('app_version') || 'v0.0.5'; 
 
       // Find APK in assets
       const apkAsset = data.assets?.find((asset: any) => asset.name.endsWith('.apk'));
@@ -552,12 +627,14 @@ export default function App() {
 
   const handleDownloadAndInstall = async (url: string, fileName: string) => {
     try {
+      setIsUpdating(true);
       await Toast.show({ text: '开始下载更新包...', duration: 'long' });
       
       const isWeb = !window.hasOwnProperty('Capacitor') || (window as any).Capacitor?.getPlatform() === 'web';
       
       if (isWeb) {
         window.open(url, '_blank');
+        setIsUpdating(false);
         return;
       }
 
@@ -582,6 +659,8 @@ export default function App() {
       console.error('Update failed', error);
       await Toast.show({ text: '更新失败，请前往浏览器手动下载' });
       window.open(url, '_blank');
+    } finally {
+      setIsUpdating(false);
     }
   };
 
@@ -644,7 +723,6 @@ export default function App() {
             {state.settings.splashText || state.settings.aiName}
           </h1>
           <p className="text-sm text-muted-foreground font-medium uppercase tracking-[0.2em] opacity-60">
-            {state.settings.aiSubtitle}
           </p>
         </div>
       </motion.div>
@@ -662,6 +740,7 @@ export default function App() {
       <AnimatePresence mode="wait">
         {showSplash && state.settings.showSplashScreen && <SplashScreen key="splash" />}
       </AnimatePresence>
+
       {/* Sidebar Overlay Backdrop */}
       <AnimatePresence>
         {isSidebarOpen && (
@@ -679,18 +758,17 @@ export default function App() {
       <AnimatePresence>
         {isSidebarOpen && (
           <motion.aside
-            initial={{ x: -80 }}
+            initial={{ x: -160 }}
             animate={{ x: 0 }}
-            exit={{ x: -80 }}
+            exit={{ x: -160 }}
             transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-            className="fixed inset-y-0 left-0 w-20 border-r bg-sidebar flex flex-col items-center py-8 gap-6 shrink-0 z-50 shadow-2xl"
+            className="fixed inset-y-0 left-0 w-40 border-r bg-sidebar flex flex-col items-start py-8 px-4 gap-6 shrink-0 z-50 shadow-2xl"
           >
-            <div className="flex flex-col gap-4">
+            <div className="flex flex-col gap-2 w-full">
               <Button 
                 variant="ghost" 
-                size="icon" 
                 className={cn(
-                  "w-11 h-11 rounded-xl bg-muted border transition-all hover:bg-primary/10 hover:text-primary active:scale-95",
+                  "w-32 justify-start gap-3 rounded-full bg-muted border transition-all hover:bg-primary/10 hover:text-primary active:scale-95 pl-3",
                   isSearching ? "text-primary border-primary/50" : "text-muted-foreground"
                 )}
                 onClick={() => {
@@ -699,51 +777,52 @@ export default function App() {
                 }}
               >
                 <Search size={20} />
+                <span>搜索聊天</span>
               </Button>
               <Button 
                 variant="ghost" 
-                size="icon" 
-                className="w-11 h-11 rounded-xl bg-muted border text-muted-foreground transition-all hover:bg-primary/10 hover:text-primary active:scale-95"
+                className="w-32 justify-start gap-3 rounded-full bg-muted border text-muted-foreground transition-all hover:bg-primary/10 hover:text-primary active:scale-95 pl-3"
                 onClick={handleExportChat}
                 title="导出记录"
               >
                 <Upload size={20} />
+                <span>导出记录</span>
               </Button>
               <Button 
                 variant="ghost" 
-                size="icon" 
-                className="w-11 h-11 rounded-xl bg-muted border text-muted-foreground transition-all hover:bg-primary/10 hover:text-primary active:scale-95"
+                className="w-32 justify-start gap-3 rounded-full bg-muted border text-muted-foreground transition-all hover:bg-primary/10 hover:text-primary active:scale-95 pl-3"
                 onClick={handleImportChat}
                 title="导入记录"
               >
                 <Download size={20} />
+                <span>导入记录</span>
               </Button>
               <Button 
                 variant="ghost" 
-                size="icon" 
-                className="w-11 h-11 rounded-xl bg-muted border text-muted-foreground transition-all hover:bg-primary/10 hover:text-primary active:scale-95"
+                className="w-32 justify-start gap-3 rounded-full bg-muted border text-muted-foreground transition-all hover:bg-primary/10 hover:text-primary active:scale-95 pl-3"
                 onClick={clearChat}
               >
                 <Trash2 size={20} />
+                <span>清除记录</span>
               </Button>
             </div>
 
-            <div className="mt-auto flex flex-col gap-4">
+            <div className="mt-auto flex flex-col gap-2 w-full">
               <Button 
                 variant="ghost" 
-                size="icon" 
-                className="w-11 h-11 rounded-xl bg-muted border text-muted-foreground transition-all hover:bg-primary/10 hover:text-primary active:scale-95"
+                className="w-32 justify-start gap-3 rounded-full bg-muted border text-muted-foreground transition-all hover:bg-primary/10 hover:text-primary active:scale-95 pl-3"
                 onClick={toggleTheme}
               >
                 {theme === 'dark' ? <Sun size={20} /> : <Moon size={20} />}
+                <span>切换主题</span>
               </Button>
               <Button 
                 variant="ghost" 
-                size="icon" 
-                className="w-11 h-11 rounded-xl bg-muted border text-muted-foreground transition-all hover:bg-primary/10 hover:text-primary active:scale-95"
+                className="w-32 justify-start gap-3 rounded-full bg-muted border text-muted-foreground transition-all hover:bg-primary/10 hover:text-primary active:scale-95 pl-3"
                 onClick={() => setIsSettingsOpen(true)}
               >
                 <Settings size={20} />
+                <span>设置</span>
               </Button>
             </div>
           </motion.aside>
@@ -761,7 +840,7 @@ export default function App() {
             <Button
               variant="ghost"
               size="icon"
-              className="rounded-full w-11 h-11 bg-muted border text-muted-foreground transition-all hover:bg-primary/10 hover:text-primary active:scale-95"
+              className="rounded-full w-11 h-11 bg-muted border text-muted-foreground transition-all hover:bg-primary/10 hover:text-primary active:scale-95 -ml-2"
               onClick={() => setIsSidebarOpen(!isSidebarOpen)}
             >
               <PanelLeft size={20} />
@@ -906,7 +985,7 @@ export default function App() {
                     exit={{ opacity: 0, y: -10 }}
                     className="text-center"
                   >
-                    <h1 className="text-lg font-semibold leading-none">{state.settings.aiName} {state.settings.aiSubtitle}</h1>
+                    <h1 className="text-lg font-semibold leading-none">{state.settings.aiName}</h1>
                     <p className="text-[10px] text-muted-foreground mt-1">{state.settings.modelName}</p>
                   </motion.div>
                 )}
@@ -928,10 +1007,13 @@ export default function App() {
         {/* Main Chat Area */}
         <div className="flex-1 flex flex-col relative overflow-hidden">
           {/* Custom Background Layer */}
-          {theme === 'light' && state.settings.customBackground && (
+          {state.settings.customBackground && (theme === 'light' || state.settings.showBackgroundInDarkMode) && (
             <div 
-              className="absolute inset-0 z-0 opacity-40 pointer-events-none bg-cover bg-center bg-no-repeat"
-              style={{ backgroundImage: `url(${state.settings.customBackground})` }}
+              className="absolute inset-0 z-0 pointer-events-none bg-cover bg-center bg-no-repeat"
+              style={{ 
+                backgroundImage: `url(${state.settings.customBackground})`,
+                opacity: state.settings.backgroundOpacity ?? 0.2
+              }}
             />
           )}
           
@@ -1029,6 +1111,7 @@ export default function App() {
           version={updateInfo.version}
           changelog={updateInfo.body}
           downloadUrl={updateInfo.apkUrl || updateInfo.url}
+          isUpdating={isUpdating}
           onUpdate={() => {
             if (updateInfo.apkUrl) {
               handleDownloadAndInstall(updateInfo.apkUrl, `update_${updateInfo.version}.apk`);
@@ -1041,4 +1124,3 @@ export default function App() {
     </div>
   );
 }
-
