@@ -8,7 +8,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { MessageList } from './components/Chat/MessageList';
 import { ChatInput } from './components/Chat/ChatInput';
 import { SettingsDialog } from './components/Settings/SettingsDialog';
@@ -514,6 +514,61 @@ export default function App() {
     }
   };
 
+  const queueRef = useRef<Message[]>([]);
+
+  const runGeminiQuery = useCallback(async (allMessagesSoFar: Message[]) => {
+    const assistantMessageId = crypto.randomUUID();
+    
+    // 1. Append Assistant placeholder
+    setState(prev => ({
+      ...prev,
+      messages: [...allMessagesSoFar, {
+        id: assistantMessageId,
+        role: 'assistant',
+        content: "",
+        timestamp: new Date(),
+        type: 'text'
+      }],
+      isLoading: true,
+      error: null
+    }));
+
+    // 2. Call Gemini
+    try {
+      let assistantMessageContent = "";
+      await sendMessageToGemini(allMessagesSoFar, state.settings, (chunk) => {
+        assistantMessageContent += chunk;
+        setState(prev => ({
+          ...prev,
+          messages: prev.messages.map(msg => 
+            msg.id === assistantMessageId 
+              ? { ...msg, content: assistantMessageContent } 
+              : msg
+          )
+        }));
+      });
+    } catch (error) {
+      setState(prev => ({
+        ...prev,
+        error: error instanceof Error ? error.message : "无法获取 Gemini 的响应。请检查设置中的 API Key。"
+      }));
+    } finally {
+      setState(prev => ({ ...prev, isLoading: false }));
+    }
+  }, [state.settings]);
+
+  useEffect(() => {
+    if (!state.isLoading && queueRef.current.length > 0) {
+      const nextUserMessage = queueRef.current.shift();
+      if (nextUserMessage) {
+        // We need to re-build context for the next call as well.
+        // Since state.messages already contains all messages, we can use it.
+        const context = state.messages;
+        runGeminiQuery(context);
+      }
+    }
+  }, [state.isLoading, state.messages, runGeminiQuery]);
+
   const handleSendMessage = useCallback(async (content: string, type: 'text' | 'voice' | 'image', mediaUrl?: string) => {
     const userMessage: Message = {
       id: crypto.randomUUID(),
@@ -537,47 +592,19 @@ export default function App() {
       return;
     }
 
-    const assistantMessageId = crypto.randomUUID();
-    const currentMessages = [...state.messages, userMessage];
-
+    // Add user message to state
     setState(prev => ({
       ...prev,
-      messages: [
-        ...currentMessages,
-        {
-          id: assistantMessageId,
-          role: 'assistant',
-          content: "",
-          timestamp: new Date(),
-          type: 'text'
-        }
-      ],
-      isLoading: true,
-      error: null
+      messages: [...prev.messages, userMessage]
     }));
 
-    try {
-      let assistantMessageContent = "";
-      await sendMessageToGemini(currentMessages, state.settings, (chunk) => {
-        assistantMessageContent += chunk;
-        setState(prev => ({
-          ...prev,
-          messages: prev.messages.map(msg => 
-            msg.id === assistantMessageId 
-              ? { ...msg, content: assistantMessageContent } 
-              : msg
-          )
-        }));
-      });
-    } catch (error) {
-      setState(prev => ({
-        ...prev,
-        error: error instanceof Error ? error.message : "无法获取 Gemini 的响应。请检查设置中的 API Key。"
-      }));
-    } finally {
-      setState(prev => ({ ...prev, isLoading: false }));
+    if (state.isLoading) {
+      queueRef.current.push(userMessage);
+    } else {
+      runGeminiQuery([...state.messages, userMessage]);
     }
-  }, [state.messages, state.settings, quotedMessage]);
+  }, [state.messages, state.settings, quotedMessage, state.isLoading, runGeminiQuery]);
+
 
   const handleCheckUpdate = async (): Promise<{ success: boolean; data?: any; error?: string }> => {
     const { githubOwner, githubRepo } = state.settings;

@@ -46,6 +46,7 @@
     "vite": "^6.2.0"
   },
   "devDependencies": {
+    "@capacitor-community/electron": "^5.0.1",
     "@capacitor/cli": "^8.3.1",
     "@types/express": "^4.17.21",
     "@types/node": "^22.14.0",

@@ -1,0 +1,6 @@
+{
+  "appId": "com.example.app",
+  "appName": "React Example",
+  "webDir": "dist",
+  "bundledWebRuntime": false
+}
