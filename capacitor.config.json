@@ -1,0 +1,6 @@
+{
+  "appId": "com.lx.app",
+  "appName": "AI",
+  "webDir": "dist",
+  "bundledWebRuntime": false
+}
