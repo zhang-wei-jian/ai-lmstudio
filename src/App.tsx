@@ -3,6 +3,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ */
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { MessageList } from './components/Chat/MessageList';
 import { ChatInput } from './components/Chat/ChatInput';
@@ -667,6 +671,60 @@ export default function App() {
       setState(prev => ({ ...prev, isLoading: false }));
     }
   };
+
+  const queueRef = useRef<Message[]>([]);
+
+  const runGeminiQuery = useCallback(async (allMessagesSoFar: Message[]) => {
+    const assistantMessageId = crypto.randomUUID();
+    
+    // Append Assistant placeholder to PREVIOUS messages (state.messages already includes the previous user message and its response)
+    setState(prev => ({
+      ...prev,
+      messages: [...prev.messages, {
+        id: assistantMessageId,
+        role: 'assistant',
+        content: "",
+        timestamp: new Date(),
+        type: 'text'
+      }],
+      isLoading: true,
+      error: null
+    }));
+
+    // 2. Call Gemini
+    try {
+      let assistantMessageContent = "";
+      await sendMessageToGemini(allMessagesSoFar, state.settings, (chunk) => {
+        assistantMessageContent += chunk;
+        setState(prev => ({
+          ...prev,
+          messages: prev.messages.map(msg => 
+            msg.id === assistantMessageId 
+              ? { ...msg, content: assistantMessageContent } 
+              : msg
+          )
+        }));
+      });
+    } catch (error) {
+      setState(prev => ({
+        ...prev,
+        error: error instanceof Error ? error.message : "无法获取 Gemini 的响应。请检查设置中的 API Key。"
+      }));
+    } finally {
+      setState(prev => ({ ...prev, isLoading: false }));
+    }
+  }, [state.settings]);
+
+  useEffect(() => {
+    if (!state.isLoading && queueRef.current.length > 0) {
+      const nextUserMessage = queueRef.current.shift();
+      if (nextUserMessage) {
+        // Re-construct the context with the latest state (which now includes the completed previous AI response)
+        const context = [...state.messages, nextUserMessage];
+        runGeminiQuery(context);
+      }
+    }
+  }, [state.isLoading, state.messages, runGeminiQuery]);
 
   const handleSendMessage = useCallback(async (content: string, type: 'text' | 'voice' | 'image', mediaUrl?: string) => {
     const userMessage: Message = {
