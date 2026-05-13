@@ -113,68 +113,103 @@ export async function sendMessageToGemini(
       let fullText = "";
       
       try {
-        const response = await CapacitorHttp.request(options);
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: options.headers,
+          body: JSON.stringify(options.data),
+        });
 
-        if (response.status < 200 || response.status >= 300) {
-          console.error("API Response Error:", response);
+        if (!response.ok) {
+          console.error("API Response Error:", response.status, response.statusText);
           
-          // If streaming failed, retry without streaming
-          options.data.stream = false;
-          const fallbackResponse = await CapacitorHttp.request(options);
+          // Retry without streaming
+          const fallbackOptions = { ...options };
+          fallbackOptions.data = { ...options.data, stream: false };
+          const fallbackResponse = await fetch(url, {
+            method: 'POST',
+            headers: fallbackOptions.headers,
+            body: JSON.stringify(fallbackOptions.data),
+          });
           
-          if (fallbackResponse.status < 200 || fallbackResponse.status >= 300) {
-            throw new Error(`API 请求失败: ${fallbackResponse.status} ${fallbackResponse.data?.error?.message || ''}`);
+          if (!fallbackResponse.ok) {
+            throw new Error(`API 请求失败: ${fallbackResponse.status} ${fallbackResponse.statusText}`);
           }
           
-          fullText = fallbackResponse.data.choices[0]?.message?.content || "";
+          const fallbackData = await fallbackResponse.json();
+          fullText = fallbackData.choices?.[0]?.message?.content || "";
           if (fullText) {
             onChunk?.(fullText);
           }
           return fullText;
         }
 
-        // Handle streaming response - some proxies return SSE format
-        const choiceData = response.data.choices?.[0];
+        // Try streaming with ReadableStream for SSE format
+        const contentType = response.headers.get('content-type') || '';
         
-        if (choiceData?.message?.content) {
-          // Non-streaming response even though we requested stream
-          fullText = choiceData.message.content;
-          onChunk?.(fullText);
-        } else if (choiceData?.delta?.content) {
-          // Single chunk streaming response
-          fullText = choiceData.delta.content;
-          onChunk?.(fullText);
-        } else if (typeof response.data === 'string') {
-          // Raw SSE string - parse it
-          const lines = response.data.split('\n');
-          for (const line of lines) {
-            if (line.startsWith('data: ') && line !== 'data: [DONE]') {
-              try {
-                const jsonStr = line.substring(6);
-                const parsed = JSON.parse(jsonStr);
-                const deltaContent = parsed.choices?.[0]?.delta?.content;
-                if (deltaContent) {
-                  fullText += deltaContent;
-                  onChunk?.(deltaContent);
+        if (contentType.includes('text/event-stream') || options.data?.stream) {
+          const reader = response.body?.getReader();
+          if (reader) {
+            const decoder = new TextDecoder();
+            let buffer = '';
+            
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              
+              buffer += decoder.decode(value, { stream: true });
+              const lines = buffer.split('\n');
+              buffer = lines.pop() || '';
+              
+              for (const line of lines) {
+                const trimmed = line.trim();
+                if (!trimmed || trimmed === 'data: [DONE]') continue;
+                
+                if (trimmed.startsWith('data: ')) {
+                  try {
+                    const jsonStr = trimmed.substring(6);
+                    const parsed = JSON.parse(jsonStr);
+                    const deltaContent = parsed.choices?.[0]?.delta?.content;
+                    if (deltaContent) {
+                      fullText += deltaContent;
+                      onChunk?.(deltaContent);
+                    }
+                    
+                    // Check for reasoning content in streaming chunks
+                    const reasoning = parsed.choices?.[0]?.delta?.reasoning_content || 
+                                     parsed.choices?.[0]?.delta?.reasoning;
+                    if (reasoning) {
+                      console.log('Reasoning content detected:', reasoning);
+                    }
+                  } catch {}
                 }
-              } catch {}
+              }
+            }
+            
+            // Process any remaining buffer
+            if (buffer.trim()) {
+              const trimmed = buffer.trim();
+              if (trimmed.startsWith('data: ') && trimmed !== 'data: [DONE]') {
+                try {
+                  const parsed = JSON.parse(trimmed.substring(6));
+                  const deltaContent = parsed.choices?.[0]?.delta?.content;
+                  if (deltaContent) {
+                    fullText += deltaContent;
+                    onChunk?.(deltaContent);
+                  }
+                } catch {}
+              }
             }
           }
-        }
-
-        // Check for reasoning/thinking content in some model responses
-        const reasoning = choiceData?.message?.reasoning_content || 
-                         choiceData?.message?.reasoning || 
-                         choiceData?.delta?.reasoning_content ||
-                         choiceData?.delta?.reasoning;
-        
-        if (reasoning) {
-          console.log('Reasoning content detected:', reasoning);
+        } else {
+          // Non-streaming response even though we requested stream
+          const data = await response.json();
+          fullText = data.choices?.[0]?.message?.content || "";
+          onChunk?.(fullText);
         }
 
       } catch (error) {
-        // If CapacitorHttp fails, try native fetch as fallback
-        fullText = await fetchWithFallback(url, options, onChunk);
+        console.error('Streaming error:', error);
+        throw new Error("网络连接错误，请检查您的网络设置、API 端点配置。");
       }
       
       return fullText;

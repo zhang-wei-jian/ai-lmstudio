@@ -14,6 +14,7 @@ export interface Message {
   mediaUrl?: string;
   transcribedText?: string;
   reasoningContent?: string;
+  revealedContent?: string;
   quote?: {
     id: string;
     userName: string;

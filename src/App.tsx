@@ -11,7 +11,7 @@ import { DeleteHistoryDialog } from './components/Chat/DeleteHistoryDialog';
 import { UpdateDialog } from './components/Chat/UpdateDialog';
 import { Message, ChatState, AppSettings, ChatSession } from './types';
 import { sendMessageToGemini } from './services/gemini';
-import { Sparkles, Settings, Sun, Moon, PanelLeft, Search, Trash2, X, Download, Upload, Calendar, Image, ChevronUp, ChevronDown, Filter, Eye, EyeOff, Plus, MessageSquare, History, ChevronRight, ChevronLeft, Bot } from 'lucide-react';
+import { Sparkles, Settings, Sun, Moon, PanelLeft, Search, Trash2, X, Download, Upload, Calendar, Image, ChevronUp, ChevronDown, Filter, Eye, EyeOff, Plus, MessageSquare, History, ChevronRight, ChevronLeft, Bot, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from './components/ui/input';
 import { motion, AnimatePresence } from 'motion/react';
@@ -91,7 +91,15 @@ export default function App() {
   const [searchMatchIndex, setSearchMatchIndex] = useState(-1);
   const [hideNonMatches, setHideNonMatches] = useState(true);
   const [isSearching, setIsSearching] = useState(false);
-  const [showSplash, setShowSplash] = useState(true);
+  const [showSplash, setShowSplash] = useState(() => {
+    return typeof window !== 'undefined' && !localStorage.getItem('has_seen_splash');
+  });
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  const showToast = useCallback((message: string) => {
+    setToastMessage(message);
+    setTimeout(() => setToastMessage(null), 2000);
+  }, []);
 
   // Session management state
   const [sessions, setSessions] = useState<ChatSession[]>(() => {
@@ -375,7 +383,8 @@ export default function App() {
     if (state.settings.showSplashScreen && showSplash) {
       const timer = setTimeout(() => {
         setShowSplash(false);
-      }, state.settings.splashDuration || 2000);
+        localStorage.setItem('has_seen_splash', 'true');
+      }, (state.settings.splashDuration || 1000));
       return () => clearTimeout(timer);
     } else {
       setShowSplash(false);
@@ -696,6 +705,7 @@ export default function App() {
           id: assistantMessageId,
           role: 'assistant',
           content: "",
+          revealedContent: "",
           reasoningContent: "",
           timestamp: new Date(),
           type: 'text'
@@ -757,12 +767,12 @@ export default function App() {
         }
       });
 
-      // Final state update to ensure content is set
+      // Final state update to ensure content is set and reveal all
       setState(prev => ({
         ...prev,
         messages: prev.messages.map(msg => 
           msg.id === assistantMessageId 
-            ? { ...msg, content: assistantMessageContent || '抱歉，未能生成回复。' } 
+            ? { ...msg, content: assistantMessageContent || '抱歉，未能生成回复。', revealedContent: assistantMessageContent || '抱歉，未能生成回复。' } 
             : msg
         )
       }));
@@ -915,7 +925,7 @@ export default function App() {
       <motion.div
         initial={{ scale: 0.8, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
-        transition={{ duration: 0.5 }}
+        transition={{ duration: 0.25 }}
         className="flex flex-col items-center gap-6"
       >
         {state.settings.splashImage ? (
@@ -1123,8 +1133,8 @@ export default function App() {
       {/* Main Content */}
 
       <main className={cn(
-        "flex-1 flex flex-col relative w-full h-screen overflow-hidden transition-all duration-300",
-        isSidebarOpen && "ml-80"
+        "flex-1 flex flex-col relative h-screen overflow-hidden transition-all duration-300",
+        isSidebarOpen ? "w-[calc(100%-20rem)] ml-auto" : "w-full"
       )}>
           {/* Header */}
           <header className={cn(
@@ -1433,22 +1443,19 @@ export default function App() {
             </div>
 
             {/* Settings Button - Bottom Left */}
-            <AnimatePresence>
-              {!isSidebarOpen && (
-                <motion.button
-                  initial={{ opacity: 0, x: -20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: -20 }}
-                  className="fixed bottom-6 left-4 z-30 w-11 h-11 rounded-full bg-muted/80 backdrop-blur-sm border border-border/50 text-muted-foreground flex items-center justify-center hover:bg-primary/10 hover:text-primary transition-all active:scale-90 shadow-lg"
-                  onClick={() => setIsSettingsOpen(true)}
-                  title="设置"
-                >
-                  <Settings size={20} />
-                </motion.button>
-              )}
-            </AnimatePresence>
           </div>
       </main>
+
+      {/* Settings Button - Fixed position, outside main content */}
+      <motion.button
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        className="fixed bottom-6 left-4 z-30 w-11 h-11 rounded-full bg-muted/80 backdrop-blur-sm border border-border/50 text-muted-foreground flex items-center justify-center hover:bg-primary/10 hover:text-primary transition-all active:scale-90 shadow-lg"
+        onClick={() => setIsSettingsOpen(true)}
+        title="设置"
+      >
+        <Settings size={20} />
+      </motion.button>
 
       <SettingsDialog 
         open={isSettingsOpen} 
@@ -1456,6 +1463,7 @@ export default function App() {
         settings={state.settings} 
         onSave={handleSaveSettings} 
         onCheckUpdate={handleCheckUpdate}
+        onShowToast={showToast}
       />
 
       <DeleteHistoryDialog
@@ -1483,6 +1491,20 @@ export default function App() {
           }}
         />
       )}
+
+      <AnimatePresence>
+        {toastMessage && (
+          <motion.div
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            className="fixed top-6 left-1/2 -translate-x-1/2 z-[9999] flex items-center gap-2 px-4 py-2.5 bg-primary text-primary-foreground rounded-full shadow-lg text-xs font-medium"
+          >
+            <Check size={14} />
+            {toastMessage}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 

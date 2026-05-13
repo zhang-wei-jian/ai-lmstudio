@@ -15,7 +15,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { AppSettings } from '../../types';
-import { ImagePlus, X, Camera, Image as ImageIcon, ChevronDown, Loader2 } from 'lucide-react';
+import { ImagePlus, X, Camera, Image as ImageIcon, ChevronDown, Loader2, Check } from 'lucide-react';
 import { Camera as CapCamera, CameraResultType, CameraSource } from '@capacitor/camera';
 import { CapacitorHttp } from '@capacitor/core';
 import { motion, AnimatePresence } from 'motion/react';
@@ -28,6 +28,7 @@ interface SettingsDialogProps {
   settings: AppSettings;
   onSave: (settings: AppSettings) => void;
   onCheckUpdate: () => Promise<{ success: boolean; data?: any; error?: string }>;
+  onShowToast?: (message: string) => void;
 }
 
 export const SettingsDialog: React.FC<SettingsDialogProps> = ({
@@ -36,6 +37,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
   settings,
   onSave,
   onCheckUpdate,
+  onShowToast,
 }) => {
   const [localSettings, setLocalSettings] = React.useState<AppSettings>(settings);
   const [updateStatus, setUpdateStatus] = React.useState<{ type: 'error' | 'success', message: string } | null>(null);
@@ -133,6 +135,11 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
     setLocalSettings((prev) => ({ ...prev, [name]: value }));
   };
 
+  const handleBlurAndSave = () => {
+    onSave(localSettings);
+    onShowToast?.('已保存');
+  };
+
   const handleImageSelect = async (field: keyof AppSettings, source: CameraSource) => {
     try {
       const image = await CapCamera.getPhoto({
@@ -158,6 +165,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
 
   const handleSave = () => {
     onSave(localSettings);
+    onShowToast?.('已保存');
     onOpenChange(false);
   };
 
@@ -224,21 +232,21 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
         <div className="grid gap-4 py-4">
           <div className="grid grid-cols-4 items-center gap-4">
             <Label htmlFor="userName" className="text-right text-xs">用户名</Label>
-            <Input id="userName" name="userName" value={localSettings.userName} onChange={handleChange} className="col-span-3 h-8 text-xs" />
+            <Input id="userName" name="userName" value={localSettings.userName} onChange={handleChange} onBlur={handleBlurAndSave} className="col-span-3 h-8 text-xs" />
           </div>
           
           <FileUploadField label="用户头像" field="userAvatar" />
 
           <div className="grid grid-cols-4 items-center gap-4">
             <Label htmlFor="aiName" className="text-right text-xs">AI 名称</Label>
-            <Input id="aiName" name="aiName" value={localSettings.aiName} onChange={handleChange} className="col-span-3 h-8 text-xs" />
+            <Input id="aiName" name="aiName" value={localSettings.aiName} onChange={handleChange} onBlur={handleBlurAndSave} className="col-span-3 h-8 text-xs" />
           </div>
 
           <FileUploadField label="AI 头像" field="aiAvatar" />
 
           <div className="grid grid-cols-4 items-center gap-4">
             <Label htmlFor="apiKey" className="text-right text-xs">API Key</Label>
-            <Input id="apiKey" name="apiKey" type="password" value={localSettings.apiKey} onChange={handleChange} className="col-span-3 h-8 text-xs" />
+            <Input id="apiKey" name="apiKey" type="password" value={localSettings.apiKey} onChange={handleChange} onBlur={handleBlurAndSave} className="col-span-3 h-8 text-xs" />
           </div>
           <div className="grid grid-cols-4 items-center gap-4">
             <Label htmlFor="modelName" className="text-right text-xs">模型名称</Label>
@@ -263,6 +271,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
                   name="modelName" 
                   value={localSettings.modelName} 
                   onChange={handleChange} 
+                  onBlur={handleBlurAndSave}
                   className="h-8 text-xs" 
                   placeholder="先填写 API 地址，自动获取模型列表" 
                 />
@@ -277,7 +286,10 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
                 name="apiEndpoint" 
                 value={localSettings.apiEndpoint} 
                 onChange={handleChange}
-                onBlur={() => fetchModels(localSettings.apiEndpoint)}
+                onBlur={(e) => {
+                  fetchModels(localSettings.apiEndpoint);
+                  handleBlurAndSave();
+                }}
                 className="h-8 text-xs flex-1" 
                 placeholder="例如：http://localhost:1234" 
               />
@@ -312,6 +324,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
               max="1"
               value={localSettings.backgroundOpacity ?? 0.2} 
               onChange={(e) => setLocalSettings(prev => ({ ...prev, backgroundOpacity: parseFloat(e.target.value) || 0 }))} 
+              onBlur={handleBlurAndSave}
               className="col-span-3 h-8 text-xs" 
             />
           </div>
@@ -319,13 +332,23 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
           <div className="grid grid-cols-4 items-center gap-4">
             <Label htmlFor="showBackgroundInDarkMode" className="text-right text-xs">暗夜模式显示</Label>
             <div className="col-span-3 flex items-center h-8">
-              <input
+              <button
                 id="showBackgroundInDarkMode"
-                type="checkbox"
-                checked={localSettings.showBackgroundInDarkMode}
-                onChange={(e) => setLocalSettings(prev => ({ ...prev, showBackgroundInDarkMode: e.target.checked }))}
-                className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary"
-              />
+                type="button"
+                role="switch"
+                aria-checked={localSettings.showBackgroundInDarkMode}
+                onClick={() => { setLocalSettings(prev => ({ ...prev, showBackgroundInDarkMode: !prev.showBackgroundInDarkMode })); }}
+                onBlur={handleBlurAndSave}
+                className={cn(
+                  "relative inline-flex h-5 w-9 items-center rounded-full transition-colors duration-200 ease-in-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+                  localSettings.showBackgroundInDarkMode ? "bg-primary" : "bg-input border border-border"
+                )}
+              >
+                <span className={cn(
+                  "pointer-events-none block h-4 w-4 rounded-full bg-background shadow transition-transform duration-200 ease-in-out",
+                  localSettings.showBackgroundInDarkMode ? "translate-x-4" : "translate-x-0.5"
+                )} />
+              </button>
             </div>
           </div>
           
@@ -335,13 +358,23 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
               <div className="grid grid-cols-4 items-center gap-4">
                 <Label htmlFor="showSplashScreen" className="text-right text-xs">启用启动页</Label>
                 <div className="col-span-3 flex items-center h-8">
-                  <input
+                  <button
                     id="showSplashScreen"
-                    type="checkbox"
-                    checked={localSettings.showSplashScreen}
-                    onChange={(e) => setLocalSettings(prev => ({ ...prev, showSplashScreen: e.target.checked }))}
-                    className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary"
-                  />
+                    type="button"
+                    role="switch"
+                    aria-checked={localSettings.showSplashScreen}
+                    onClick={() => { setLocalSettings(prev => ({ ...prev, showSplashScreen: !prev.showSplashScreen })); }}
+                    onBlur={handleBlurAndSave}
+                    className={cn(
+                      "relative inline-flex h-5 w-9 items-center rounded-full transition-colors duration-200 ease-in-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+                      localSettings.showSplashScreen ? "bg-primary" : "bg-input border border-border"
+                    )}
+                  >
+                    <span className={cn(
+                      "pointer-events-none block h-4 w-4 rounded-full bg-background shadow transition-transform duration-200 ease-in-out",
+                      localSettings.showSplashScreen ? "translate-x-4" : "translate-x-0.5"
+                    )} />
+                  </button>
                 </div>
               </div>
               
@@ -354,6 +387,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
                       name="splashText" 
                       value={localSettings.splashText || ''} 
                       onChange={handleChange} 
+                      onBlur={handleBlurAndSave}
                       className="col-span-3 h-8 text-xs" 
                       placeholder="例如：Aether-X" 
                     />
@@ -366,6 +400,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
                       name="splashSubtitle" 
                       value={localSettings.splashSubtitle || ''} 
                       onChange={handleChange} 
+                      onBlur={handleBlurAndSave}
                       className="col-span-3 h-8 text-xs" 
                       placeholder="例如：Loading AI Experience" 
                     />
@@ -383,6 +418,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
                         if (isNaN(val) || val < 1000) {
                           setLocalSettings(prev => ({ ...prev, splashDuration: 1000 }));
                         }
+                        handleBlurAndSave();
                       }}
                       className="col-span-3 h-8 text-xs" 
                     />
@@ -394,7 +430,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
 
           <div className="grid grid-cols-4 items-center gap-4">
             <Label htmlFor="systemInstruction" className="text-right text-xs">回复逻辑</Label>
-            <Input id="systemInstruction" name="systemInstruction" value={localSettings.systemInstruction || ''} onChange={handleChange} className="col-span-3 h-8 text-xs" placeholder="例如：你是一个专业的程序员" />
+            <Input id="systemInstruction" name="systemInstruction" value={localSettings.systemInstruction || ''} onChange={handleChange} onBlur={handleBlurAndSave} className="col-span-3 h-8 text-xs" placeholder="例如：你是一个专业的程序员" />
           </div>
 
           <div className="border-t pt-4 mt-2">
@@ -402,11 +438,11 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
             <div className="space-y-3">
               <div className="grid grid-cols-4 items-center gap-4">
                 <Label htmlFor="githubOwner" className="text-right text-xs">用户名</Label>
-                <Input id="githubOwner" name="githubOwner" value={localSettings.githubOwner || ''} onChange={handleChange} className="col-span-3 h-8 text-xs" placeholder="例如：lx00924" />
+                <Input id="githubOwner" name="githubOwner" value={localSettings.githubOwner || ''} onChange={handleChange} onBlur={handleBlurAndSave} className="col-span-3 h-8 text-xs" placeholder="例如：lx00924" />
               </div>
               <div className="grid grid-cols-4 items-center gap-4">
                 <Label htmlFor="githubRepo" className="text-right text-xs">仓库名</Label>
-                <Input id="githubRepo" name="githubRepo" value={localSettings.githubRepo || ''} onChange={handleChange} className="col-span-3 h-8 text-xs" placeholder="例如：aether-x" />
+                <Input id="githubRepo" name="githubRepo" value={localSettings.githubRepo || ''} onChange={handleChange} onBlur={handleBlurAndSave} className="col-span-3 h-8 text-xs" placeholder="例如：aether-x" />
               </div>
               
               <AnimatePresence>

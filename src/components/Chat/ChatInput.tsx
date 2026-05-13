@@ -291,7 +291,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage, quotedMessa
                 }
               }}
               placeholder={isRecording ? "正在录音..." : "输入消息..."}
-              className="h-12 px-5 rounded-full bg-muted/50 border-border/30 focus-visible:ring-primary/20 text-[16px] pr-14"
+              className="h-12 px-5 rounded-full bg-gray-100 dark:bg-white/20 border-border/50 focus-visible:ring-primary/20 text-[16px] pr-14"
             />
             
             {/* Mic Button - inside input on right */}

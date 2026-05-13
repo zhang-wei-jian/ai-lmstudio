@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
@@ -289,6 +289,39 @@ const MessageItem: React.FC<{
   messageRef,
   onRegisterReplay
 }) => {
+  const [revealedChars, setRevealedChars] = useState(0);
+  
+  useEffect(() => {
+    if (message.revealedContent && message.revealedContent !== message.content) {
+      setRevealedChars(message.revealedContent.length);
+    } else {
+      setRevealedChars(message.content.length);
+    }
+  }, [message.revealedContent, message.content]);
+  
+  const displayContent = revealedChars > 0 && revealedChars < message.content.length
+    ? message.content.substring(0, revealedChars)
+    : message.content;
+  
+  useEffect(() => {
+    if (!message.content || message.content.length === 0) return;
+    
+    if (revealedChars >= message.content.length) return;
+    
+    const charsPerTick = Math.max(1, Math.floor(message.content.length / 80));
+    const interval = setInterval(() => {
+      setRevealedChars(prev => {
+        const next = prev + charsPerTick;
+        if (next >= message.content.length) {
+          clearInterval(interval);
+          return message.content.length;
+        }
+        return next;
+      });
+    }, 15);
+    
+    return () => clearInterval(interval);
+  }, [message.content, revealedChars]);
   return (
     <motion.div
       key={message.id}
@@ -387,7 +420,7 @@ const MessageItem: React.FC<{
             </>
           )}
 
-              {message.content && (
+              {displayContent && (
                 <div className={cn(
                   "prose prose-sm dark:prose-invert max-w-none",
                   (message.type === 'image' || message.type === 'voice') && "mt-2 pt-2 border-t border-border/50"
@@ -395,7 +428,7 @@ const MessageItem: React.FC<{
                   {isSearching ? (
                     <div className="whitespace-pre-wrap">
                       <HighlightedText 
-                        text={message.content} 
+                        text={displayContent} 
                         query={searchQuery} 
                         isActive={message.id === activeSearchMatchId}
                       />
@@ -422,7 +455,7 @@ const MessageItem: React.FC<{
                         },
                       }}
                     >
-                      {message.content}
+                      {displayContent}
                     </ReactMarkdown>
                   )}
                 </div>
@@ -496,6 +529,30 @@ export const MessageList: React.FC<MessageListProps> = ({
         window.removeEventListener('touchend', handleRelease);
     }
   }, [contextMenu]);
+
+  React.useEffect(() => {
+    const container = scrollRef.current;
+    if (!container) return;
+
+    let prevScrollHeight = container.scrollHeight;
+
+    const observer = new MutationObserver(() => {
+      if (isLoading && !isSelectionMode) {
+        const currentScrollHeight = container.scrollHeight;
+        if (currentScrollHeight > prevScrollHeight) {
+          container.scrollTo({
+            top: container.scrollHeight,
+            behavior: 'auto'
+          });
+          prevScrollHeight = currentScrollHeight;
+        }
+      }
+    });
+
+    observer.observe(container, { childList: true, subtree: true, characterData: true });
+
+    return () => observer.disconnect();
+  }, [isLoading, isSelectionMode]);
 
   const scrollToMessage = (id: string) => {
     const element = messageRefs.current[id];
@@ -691,20 +748,22 @@ export const MessageList: React.FC<MessageListProps> = ({
 
     const scrollToBottom = () => {
       if (scrollRef.current && !isSelectionMode && !isNavigatingSearchMatch.current) {
-        // Use instant scroll if it's the first scroll OR if search status just changed (on/off)
-        const shouldBeInstant = isFirst || searchStatusChanged;
+        // Use instant scroll for first scroll, search toggle, or loading state
+        const shouldBeInstant = isFirst || searchStatusChanged || isLoading;
         
-        scrollRef.current.scrollTo({
-          top: scrollRef.current.scrollHeight,
-          behavior: shouldBeInstant ? 'auto' : 'smooth'
+        requestAnimationFrame(() => {
+          scrollRef.current?.scrollTo({
+            top: scrollRef.current.scrollHeight,
+            behavior: shouldBeInstant ? 'auto' : 'smooth'
+          });
         });
         
         if (isFirst) isFirstScroll.current = false;
       }
     };
     
-    // Use a slightly longer delay if search cancelled to ensure DOM is fully updated
-    const timeoutId = setTimeout(scrollToBottom, (isFirst || searchStatusChanged) ? 0 : 100);
+    // No delay when loading - scroll immediately after paint
+    const timeoutId = setTimeout(scrollToBottom, (isFirst || searchStatusChanged || isLoading) ? 0 : 100);
     return () => clearTimeout(timeoutId);
   }, [messages, isLoading, isSelectionMode, isSearching]);
 
@@ -769,7 +828,7 @@ export const MessageList: React.FC<MessageListProps> = ({
         );
         })}
         
-        {isLoading && (
+        {isLoading && messages.length > 0 && !messages[messages.length - 1].content && (
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
